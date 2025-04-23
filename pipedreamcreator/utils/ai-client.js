@@ -121,23 +121,55 @@ Provide a detailed analysis including:
     console.log(chalk.yellow(`Created default template for ${templateName} at ${templatePath}`));
   }
 
+  async callClaudeWithFallbacks(promptContent, systemPrompt, temperature = 0.7) {
+    // Try multiple Claude model versions
+    const modelVersions = [
+      'claude-3-sonnet-20240229',
+      'claude-3-opus-20240229',
+      'claude-3-haiku-20240307',
+      'claude-3-sonnet',
+      'claude-3-opus',
+      'claude-3-haiku',
+      'claude-3',
+      'claude-2'
+    ];
+    
+    let lastError = null;
+    
+    for (const model of modelVersions) {
+      try {
+        console.log(chalk.blue(`Attempting to use Claude model: ${model}...`));
+        
+        const response = await this.anthropic.messages.create({
+          model: model,
+          max_tokens: 4000,
+          temperature: temperature,
+          system: systemPrompt,
+          messages: [
+            { role: 'user', content: promptContent }
+          ],
+        });
+        
+        return response.content[0].text;
+      } catch (error) {
+        console.log(chalk.yellow(`Model ${model} failed: ${error.message}`));
+        lastError = error;
+      }
+    }
+    
+    // If we get here, all models failed
+    console.error(chalk.red("All Claude models failed. Last error:"), lastError.message);
+    throw new Error(`All Claude models failed. Last error: ${lastError.message}`);
+  }
+
   async brainstormWorkflow(description) {
     try {
       console.log(chalk.blue('Brainstorming workflow ideas with Claude AI...'));
       
       const prompt = await this.generatePrompt('brainstorm-workflow', { description });
+      const systemPrompt = "You are an expert in Pipedream workflow development. You excel at designing efficient, effective automation workflows.";
       
-      const response = await this.anthropic.messages.create({
-        model: 'claude-3-sonnet-20240229-v1:0',
-        max_tokens: 4000,
-        temperature: 0.7,
-        system: "You are an expert in Pipedream workflow development. You excel at designing efficient, effective automation workflows.",
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-      });
-      
-      return response.content[0].text;
+      return await this.callClaudeWithFallbacks(prompt, systemPrompt, 0.7);
     } catch (error) {
       console.error(chalk.red('Error generating workflow ideas:'), error.message);
       throw error;
@@ -153,17 +185,9 @@ Provide a detailed analysis including:
         ...options
       });
       
-      const response = await this.anthropic.messages.create({
-        model: 'claude-3-sonnet-20240229-v1:0',
-        max_tokens: 4000,
-        temperature: 0.2,
-        system: "You are an expert in Pipedream component development. You excel at creating well-structured, efficient API integrations.",
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-      });
+      const systemPrompt = "You are an expert in Pipedream component development. You excel at creating well-structured, efficient API integrations.";
       
-      return response.content[0].text;
+      return await this.callClaudeWithFallbacks(prompt, systemPrompt, 0.2);
     } catch (error) {
       console.error(chalk.red(`Error generating ${componentType} component:`), error.message);
       throw error;
@@ -180,17 +204,9 @@ Provide a detailed analysis including:
         action: action || '',
       });
       
-      const response = await this.anthropic.messages.create({
-        model: 'claude-3-sonnet-20240229-v1:0',
-        max_tokens: 4000,
-        temperature: 0.3,
-        system: "You are an expert in API integrations and the Pipedream platform. Your goal is to provide accurate, helpful information about Pipedream apps and their capabilities.",
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-      });
+      const systemPrompt = "You are an expert in API integrations and the Pipedream platform. Your goal is to provide accurate, helpful information about Pipedream apps and their capabilities.";
       
-      return response.content[0].text;
+      return await this.callClaudeWithFallbacks(prompt, systemPrompt, 0.3);
     } catch (error) {
       console.error(chalk.red('Error researching app:'), error.message);
       throw error;
