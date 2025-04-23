@@ -22,12 +22,13 @@ program
 
 program
   .command('scaffold')
-  .description('Generate component templates')
+  .description('Generate component or workflow templates')
   .option('-t, --type <type>', 'Component type (source or action)', 'source')
-  .option('-n, --name <name>', 'Component name')
-  .option('-d, --description <description>', 'Component description')
+  .option('-n, --name <name>', 'Component or workflow name')
+  .option('-d, --description <description>', 'Component or workflow description')
   .option('-a, --app <app>', 'App name (e.g., github, slack)')
   .option('-f, --from-brainstorm <id>', 'Use output from brainstorm command')
+  .option('-w, --workflow', 'Scaffold a complete workflow with all components')
   .action(scaffold.execute);
 
 program

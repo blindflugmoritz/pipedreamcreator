@@ -9,12 +9,17 @@ const aiClient = require('../utils/ai-client');
 
 async function execute(options) {
   try {
-    // Process from-brainstorm option
-    if (options.fromBrainstorm) {
-      return handleBrainstormScaffold(options.fromBrainstorm);
+    // Process full workflow scaffold option
+    if (options.workflow) {
+      return await scaffoldFullWorkflow(options);
     }
     
-    // Otherwise proceed with regular scaffolding
+    // Process from-brainstorm option
+    if (options.fromBrainstorm) {
+      return await handleBrainstormScaffold(options.fromBrainstorm);
+    }
+    
+    // Otherwise proceed with regular component scaffolding
     const answers = await gatherComponentInfo(options);
     
     // Generate component files
@@ -23,6 +28,331 @@ async function execute(options) {
     console.error(chalk.red('Error during scaffolding:'), error.message);
     process.exit(1);
   }
+}
+
+async function scaffoldFullWorkflow(options) {
+  console.log(chalk.blue('Scaffolding a complete workflow...'));
+  
+  // Get workflow description if not provided
+  let description = options.description;
+  if (!description) {
+    const answer = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'description',
+        message: 'Describe the workflow to create:',
+        validate: (input) => input.length > 0 || 'Workflow description is required'
+      }
+    ]);
+    description = answer.description;
+  }
+  
+  // Generate workflow name if not provided
+  let workflowName = options.name;
+  if (!workflowName) {
+    // Extract a name from the description
+    workflowName = description
+      .split(' ')
+      .slice(0, 5)
+      .join(' ')
+      .replace(/[^a-zA-Z0-9 ]/g, '')
+      .trim();
+  }
+  
+  // Create directories
+  const componentsDir = path.join(process.cwd(), 'components');
+  const workflowsDir = path.join(process.cwd(), 'workflows');
+  
+  if (!fs.existsSync(componentsDir)) {
+    fs.mkdirSync(componentsDir, { recursive: true });
+  }
+  
+  if (!fs.existsSync(workflowsDir)) {
+    fs.mkdirSync(workflowsDir, { recursive: true });
+  }
+  
+  // Generate a workflow ID
+  const workflowId = 'p_' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  const workflowDir = path.join(workflowsDir, workflowId);
+  fs.mkdirSync(workflowDir, { recursive: true });
+  
+  // Use Claude to generate workflow design
+  const spinner = ora('Brainstorming workflow design with Claude AI...').start();
+  
+  try {
+    // Get design from Claude
+    const brainstormResult = await aiClient.brainstormWorkflow(description);
+    
+    spinner.text = 'Analyzing workflow structure...';
+    
+    // Parse components from the brainstorm result
+    const { components, trigger } = parseWorkflowDesign(brainstormResult);
+    
+    spinner.text = 'Creating workflow components...';
+    
+    // Create all components
+    const createdComponents = [];
+    
+    // Create trigger component first
+    if (trigger && trigger.type && trigger.name) {
+      const triggerComponent = await createComponentFiles({
+        type: 'source',
+        name: trigger.name,
+        description: trigger.description || `${trigger.name} trigger for ${workflowName}`,
+        app: trigger.app || inferAppFromName(trigger.name)
+      });
+      
+      createdComponents.push({
+        key: triggerComponent.key,
+        type: 'source',
+        config: {}
+      });
+    }
+    
+    // Create action components
+    for (const component of components) {
+      if (component.type === 'action') {
+        const createdComponent = await createComponentFiles({
+          type: 'action',
+          name: component.name,
+          description: component.description || `${component.name} for ${workflowName}`,
+          app: component.app || inferAppFromName(component.name)
+        });
+        
+        createdComponents.push({
+          key: createdComponent.key,
+          type: 'action',
+          config: {}
+        });
+      }
+    }
+    
+    spinner.text = 'Creating workflow configuration...';
+    
+    // Create workflow.json
+    let triggerConfig = {};
+    
+    if (trigger && trigger.type === 'http') {
+      triggerConfig = {
+        type: 'http',
+        path: Math.random().toString(36).substring(2, 16)
+      };
+    } else if (trigger && trigger.type === 'schedule') {
+      triggerConfig = {
+        type: 'schedule',
+        schedule: trigger.schedule || '0 0 * * *'
+      };
+    } else {
+      // Default to HTTP if not specified
+      triggerConfig = {
+        type: 'http',
+        path: Math.random().toString(36).substring(2, 16)
+      };
+    }
+    
+    const workflow = {
+      id: workflowId,
+      name: workflowName,
+      created_at: new Date().toISOString(),
+      description: description,
+      trigger: triggerConfig,
+      components: createdComponents,
+      settings: {
+        continueOnFailure: false
+      }
+    };
+    
+    // Add webhook URL if using HTTP trigger
+    if (triggerConfig.type === 'http') {
+      workflow.webhook_url = `https://pipedream.com/webhooks/${workflowId}/${triggerConfig.path}`;
+    }
+    
+    fs.writeFileSync(
+      path.join(workflowDir, 'workflow.json'),
+      JSON.stringify(workflow, null, 2),
+      'utf8'
+    );
+    
+    // Add workflow documentation
+    fs.writeFileSync(
+      path.join(workflowDir, 'WORKFLOW.md'),
+      generateWorkflowDocs(workflowName, description, trigger, components, brainstormResult),
+      'utf8'
+    );
+    
+    // Create code.js file with placeholder
+    fs.writeFileSync(
+      path.join(workflowDir, 'code.js'),
+      `// Workflow code for ${workflowName} (${workflowId})
+// This file contains any custom code for the workflow
+
+module.exports = {
+  // Add custom functions here
+  async processData(data) {
+    // Process data between steps
+    return data;
+  }
+};
+`,
+      'utf8'
+    );
+    
+    spinner.succeed('Workflow scaffolding complete!');
+    
+    // Display summary of what was created
+    console.log(chalk.green(`\nWorkflow created: ${workflowName} (${workflowId})`));
+    console.log(chalk.blue(`Workflow directory: ${workflowDir}`));
+    console.log(chalk.cyan('\nComponents created:'));
+    
+    if (trigger && trigger.name) {
+      console.log(chalk.yellow(`- ${trigger.name} (Trigger)`));
+    }
+    
+    components.forEach(component => {
+      if (component.type === 'action') {
+        console.log(chalk.yellow(`- ${component.name} (Action)`));
+      }
+    });
+    
+    console.log(chalk.green('\nNext steps:'));
+    console.log(chalk.yellow('1. Edit components in the components/ directory'));
+    console.log(chalk.yellow(`2. Test the workflow: pdcreator test --path ${workflowDir} --watch`));
+    console.log(chalk.yellow(`3. Deploy the workflow: pdcreator deploy --path ${workflowDir}`));
+    
+    return {
+      workflowId,
+      workflowDir,
+      components: createdComponents.length
+    };
+  } catch (error) {
+    spinner.fail('Error generating workflow');
+    console.error(chalk.red('Error:'), error.message);
+    throw error;
+  }
+}
+
+function parseWorkflowDesign(designText) {
+  const components = [];
+  let trigger = null;
+  
+  // Look for trigger/source sections
+  const triggerRegex = /(\b(?:trigger|source)\b.*?)(?:\n\s*##|\n\s*$)/gsi;
+  const triggerMatch = triggerRegex.exec(designText);
+  
+  if (triggerMatch) {
+    const triggerSection = triggerMatch[1];
+    
+    // Try to determine trigger type
+    let triggerType = 'http';
+    if (/\bschedule\b|\bcron\b|\bdaily\b|\bhourly\b/i.test(triggerSection)) {
+      triggerType = 'schedule';
+    }
+    
+    // Get trigger name
+    const triggerNameMatch = triggerSection.match(/(?:trigger|source)(?:\s+component)?:?\s*([A-Za-z][A-Za-z0-9 ]+)/i);
+    const triggerName = triggerNameMatch ? triggerNameMatch[1].trim() : 'Webhook Trigger';
+    
+    // Get app name
+    let appName = null;
+    const appMatch = triggerSection.match(/\b(github|slack|shopify|stripe|google|twitter|airtable|http|webhook|schedule|cron)\b/i);
+    if (appMatch) {
+      appName = appMatch[1].toLowerCase();
+    }
+    
+    // Get description
+    const descMatch = triggerSection.match(/description:?\s*"([^"]+)"/i);
+    const description = descMatch ? descMatch[1] : '';
+    
+    // Get schedule if it's a schedule trigger
+    let schedule = '0 0 * * *'; // Default to daily at midnight
+    if (triggerType === 'schedule') {
+      const scheduleMatch = triggerSection.match(/\bcron:?\s*["']([^"']+)["']/i);
+      if (scheduleMatch) {
+        schedule = scheduleMatch[1];
+      } else if (/\bhourly\b/i.test(triggerSection)) {
+        schedule = '0 * * * *';
+      } else if (/\bdaily\b/i.test(triggerSection)) {
+        schedule = '0 0 * * *';
+      }
+    }
+    
+    trigger = {
+      type: triggerType,
+      name: triggerName,
+      app: appName,
+      description,
+      schedule
+    };
+  }
+  
+  // Look for action components
+  const actionRegex = /\b(?:action|step)\b(?:.*?)(?:\n\s*##|\n\s*$)/gsi;
+  let actionMatch;
+  
+  while ((actionMatch = actionRegex.exec(designText)) !== null) {
+    const actionSection = actionMatch[0];
+    
+    // Get action name
+    const nameMatch = actionSection.match(/(?:action|step)(?:\s+component)?:?\s*([A-Za-z][A-Za-z0-9 ]+)/i);
+    if (!nameMatch) continue;
+    
+    const name = nameMatch[1].trim();
+    
+    // Get app name
+    let app = null;
+    const appMatch = actionSection.match(/\b(github|slack|shopify|stripe|google|twitter|airtable|http|email|sender)\b/i);
+    if (appMatch) {
+      app = appMatch[1].toLowerCase();
+    }
+    
+    // Get description
+    const descMatch = actionSection.match(/description:?\s*"([^"]+)"/i);
+    const description = descMatch ? descMatch[1] : '';
+    
+    components.push({
+      type: 'action',
+      name,
+      app,
+      description
+    });
+  }
+  
+  return { trigger, components };
+}
+
+function generateWorkflowDocs(name, description, trigger, components, fullDesign) {
+  return `# Workflow: ${name}
+
+## Purpose
+${description}
+
+## Components
+
+### Trigger: ${trigger ? trigger.name : 'Webhook Trigger'}
+${trigger ? `- Type: ${trigger.type}` : '- Type: webhook'}
+${trigger && trigger.description ? `- Description: ${trigger.description}` : ''}
+${trigger && trigger.type === 'schedule' ? `- Schedule: ${trigger.schedule}` : ''}
+
+${components.map(comp => `### Action: ${comp.name}
+${comp.description ? `- Description: ${comp.description}` : ''}
+${comp.app ? `- App: ${comp.app}` : ''}
+`).join('\n')}
+
+## Full Workflow Design
+${fullDesign}
+
+## Testing
+To test this workflow:
+\`\`\`bash
+pdcreator test --path ./workflows/${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')} --watch
+\`\`\`
+
+## Deployment
+To deploy this workflow:
+\`\`\`bash
+pdcreator deploy --path ./workflows/${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}
+\`\`\`
+`;
 }
 
 async function handleBrainstormScaffold(brainstormId) {
@@ -241,7 +571,7 @@ async function createComponentFiles(componentInfo) {
   const { type, name, description, app } = componentInfo;
   
   // Format component key
-  const key = `${app.toLowerCase()}-${name.toLowerCase().replace(/\\s+/g, '-')}`;
+  const key = `${app.toLowerCase()}-${name.toLowerCase().replace(/\s+/g, '-')}`;
   
   // Create component directory
   const componentsDir = path.join(process.cwd(), 'components');
@@ -285,7 +615,7 @@ async function createComponentFiles(componentInfo) {
       fs.writeFileSync(componentFilePath, componentCode, 'utf8');
       
       console.log(chalk.green(`\nComponent created at: ${componentFilePath}`));
-      return;
+      return { key, type, name, description, app, path: componentFilePath };
     } catch (error) {
       spinner.fail('Failed to generate component with Claude AI');
       console.error(chalk.red('Error:'), error.message);
@@ -380,6 +710,8 @@ describe('${name}', () => {
 `;
 
   fs.writeFileSync(path.join(testDir, 'index.test.js'), testFileContent, 'utf8');
+  
+  return { key, type, name, description, app, path: componentFilePath };
 }
 
 module.exports = { execute };
