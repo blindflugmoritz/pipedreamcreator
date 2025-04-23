@@ -47,11 +47,13 @@ program
 
 program
   .command('test')
-  .description('Test component functionality')
-  .option('-p, --path <path>', 'Path to component directory')
-  .option('-m, --method <method>', 'Test specific method')
-  .option('-c, --coverage', 'Generate test coverage')
-  .option('-w, --watch', 'Watch mode')
+  .description('Test workflow or component functionality')
+  .option('-p, --path <path>', 'Path to workflow or component directory')
+  .option('-w, --watch', 'Watch mode (starts a test server)')
+  .option('-c, --create', 'Create a new workflow')
+  .option('-m, --method <method>', 'Test specific component method')
+  .option('--coverage', 'Generate test coverage')
+  .option('--no-open', 'Do not open browser automatically in watch mode')
   .action(test.execute);
 
 program
