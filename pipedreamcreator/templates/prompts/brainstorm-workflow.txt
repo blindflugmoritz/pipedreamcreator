@@ -1,0 +1,26 @@
+I'd like you to help me design a Pipedream workflow for the following use case:
+
+{{description}}
+
+Please provide a complete workflow design including:
+
+1. The appropriate trigger type (HTTP, schedule, or app-specific)
+2. Required steps with proper sequence
+3. Data transformation requirements between steps
+4. Error handling considerations 
+5. Expected inputs and outputs
+
+For each component, please specify:
+- Component type (source/trigger or action)
+- Required properties and configuration
+- Data flow between components
+- Edge cases to handle
+
+Format your response as a structured workflow design with clear sections for:
+- Overview
+- Trigger Component
+- Processing Steps
+- Final Action
+- Error Handling
+
+Please be specific about which Pipedream apps and actions would be used in this workflow, providing as much technical detail as possible while keeping it practical and implementable.

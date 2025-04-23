@@ -1,0 +1,27 @@
+Create a Pipedream {{componentType}} component with the following details:
+
+- Name: {{name}}
+- Key: {{key}}
+- Description: {{description}}
+- App: {{app}}
+
+Please provide complete working code following these requirements:
+
+1. Follow the standard Pipedream component structure
+2. Include all necessary imports
+3. Define appropriate props with proper types and descriptions
+4. Implement all required methods
+5. Include helpful code comments
+6. Follow best practices for error handling
+
+For source/trigger components:
+- Implement appropriate deduplication logic
+- Include hooks for initialization and cleanup
+- Implement proper event emission with metadata
+
+For action components:
+- Validate inputs
+- Return appropriate response objects
+- Export a summary
+
+The code should be production-ready, following Pipedream's patterns and conventions. Do not include any explanations before or after the code - just the component implementation as an ES module (mjs file).

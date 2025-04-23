@@ -1,0 +1,30 @@
+{
+  "name": "pdcreator",
+  "version": "0.1.0",
+  "description": "Tool for creating and managing Pipedream workflows and components",
+  "main": "index.js",
+  "bin": {
+    "pdcreator": "./index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "pipedream",
+    "automation",
+    "workflow",
+    "integration"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "anthropic": "^0.23.0",
+    "chalk": "^4.1.2",
+    "commander": "^13.1.0",
+    "dotenv": "^16.5.0",
+    "handlebars": "^4.7.8",
+    "inquirer": "^8.2.6",
+    "nanoid": "^3.3.7",
+    "ora": "^5.4.1"
+  }
+}

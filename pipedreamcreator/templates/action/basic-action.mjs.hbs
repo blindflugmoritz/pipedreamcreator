@@ -1,0 +1,60 @@
+/**
+ * {{name}}
+ * @description {{description}}
+ * @created {{date}}
+ */
+
+export default {
+  key: "{{key}}",
+  name: "{{name}}",
+  description: "{{description}}",
+  version: "{{version}}",
+  type: "action",
+  props: {
+    // Common props
+    {{app}}: {
+      type: "app",
+      app: "{{app}}",
+    },
+    // Define additional props here
+    inputField: {
+      type: "string",
+      label: "Input Field",
+      description: "Example input field",
+    },
+    optionalField: {
+      type: "string",
+      label: "Optional Field",
+      description: "An example optional field",
+      optional: true,
+    },
+  },
+  async run({ $ }) {
+    try {
+      // Example implementation - replace with actual code
+      const inputData = {
+        input: this.inputField,
+        optional: this.optionalField,
+      };
+      
+      // Example API call
+      // const response = await this.{{app}}.makeApiCall(inputData);
+      
+      // Mock response for the starter template
+      const response = {
+        success: true,
+        data: inputData,
+        timestamp: new Date().toISOString(),
+      };
+      
+      // Create a summary for the user
+      $.export("$summary", "Successfully executed {{name}}");
+      
+      // Return the response data
+      return response;
+    } catch (error) {
+      console.error("Error running action:", error);
+      throw error;
+    }
+  },
+};
