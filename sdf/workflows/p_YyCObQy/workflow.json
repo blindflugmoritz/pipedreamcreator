@@ -1,0 +1,12 @@
+{
+  "id": "p_YyCObQy",
+  "name": "API Endpoint",
+  "created_at": "2025-04-21T08:16:52.942Z",
+  "project_id": "proj_PNspYoE",
+  "description": "",
+  "trigger": {
+    "type": "http",
+    "path": "4f9d93f09c8b7850"
+  },
+  "webhook_url": "https://webhook.pipedream.com/v1/sources/p_YyCObQy/events"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "p_MOCpBVn",
+  "name": "API Endpoint",
+  "created_at": "2025-04-21T00:13:37.314Z",
+  "project_id": "proj_PNspYoE",
+  "description": "",
+  "trigger": {
+    "type": "http",
+    "path": "adba8834fdb54213"
+  },
+  "webhook_url": "https://pipedream.com/webhooks/p_MOCpBVn/adba8834fdb54213"
+}

@@ -1,0 +1,45 @@
+pipedream project manager tool that runs in the command line
+its implemented in node js
+
+it uses the rest api of pipedream
+https://pipedream.com/docs/rest-api/
+
+it uses mcp pupeteer to open a project on pipedream
+
+i helps to do the following
+opening a new project for creating pipedream.com automatization
+it clones the default claude.md files from a github
+it helps to open new project on pipedream.com in the browser with the mcp pupeteer
+it helps tp open new workflows on pipedream.com over the api
+organize projects on the local file system and allows to code locally with claude code
+
+# the cli tool should support the following commands
+"new project"
+"open project"
+"new workflow"
+"sync workflows"
+
+
+
+# details of the "new project" command
+which should create a new project locally on the machine
+it should ask for the project name
+it should ask for the project path on the file system (default is in the directory)
+it should ask for the pipedream username and password and store it in .env file
+it should ask for the pipedream api key and store it in the .env file
+
+then it should login into pipedream.com with the username and password stored in the .env with mcp pupeteer
+it should navigate to https://pipedream.com/@momoetomo/projects and click "new project"
+fill out the field called name with the project name and click "create project"
+in the new page it should then go to the settings and copy the project id which is in the format "proj_*"
+the project id is also stored then in the .env file
+
+# details of the "open project" command
+remembers the project id and project name stored in the .env file for all future commands
+
+# details of the "new workflow" command
+ask for the workflow command name
+open the new workflow with the pipedream api
+download the new create workflow json and store it in a file
+
+
