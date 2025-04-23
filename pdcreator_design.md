@@ -574,7 +574,7 @@ To ensure successful implementation of pdcreator, the following specifications s
 ### Integration with Existing Systems
 
 1. **Workflow Structure**
-   - Analyze existing workflow examples in codebase:
+   - Analyzed existing workflow examples in codebase:
      - `/workflows/p_PACdxn9/`
      - `/sdf/workflows/p_MOCpBVn/`
      - `/sdf/workflows/p_V9CAOQZ/`
@@ -599,6 +599,105 @@ To ensure successful implementation of pdcreator, the following specifications s
    - Prioritize functionality over extensive documentation initially
    - Ensure robust error handling for primary functions
 
+### Pipedream Component Structure Analysis
+
+Based on the analysis of existing Pipedream workflows and components, we've established the following patterns:
+
+#### Workflow.json Structure
+
+```json
+{
+  "id": "p_WORKFLOW_ID",
+  "name": "Workflow Name", 
+  "created_at": "2025-04-21T08:30:26.411Z",
+  "project_id": "proj_PROJECT_ID",
+  "description": "Optional description",
+  "trigger": {
+    "type": "http",
+    "path": "randomPathString"
+  },
+  "webhook_url": "https://pipedream.com/webhooks/p_ID/path"
+}
+```
+
+For scheduled triggers:
+```json
+{
+  "trigger": {
+    "type": "schedule",
+    "schedule": "0 0 * * *"
+  }
+}
+```
+
+#### Component Structure (code.js)
+
+1. **Trigger (Source) Components:**
+
+```javascript
+export default {
+  type: "source",
+  key: "http-webhook",
+  name: "HTTP Webhook",
+  description: "Receives HTTP requests and emits them as events",
+  version: "0.0.1",
+  props: {
+    http: "$.interface.http",
+  },
+  async run(event) {
+    // Process incoming webhook data
+    this.http.respond({
+      status: 200,
+      body: { success: true },
+    });
+    
+    // Emit event to workflow
+    this.$emit(event, {
+      summary: "New webhook request received",
+    });
+  },
+}
+```
+
+2. **Action Components:**
+
+```javascript
+export default {
+  name: "Action Name",
+  key: "action_key",
+  version: "0.0.1",
+  type: "action",
+  description: "Performs a specific action",
+  props: {
+    // Input parameters
+    inputData: {
+      type: "string",
+      label: "Input Data",
+      description: "Data to process",
+    },
+  },
+  async run({ steps, $ }) {
+    // Access data from previous steps
+    const previousData = steps.trigger.event;
+    
+    // Perform action logic
+    const result = await someOperation(this.inputData);
+    
+    // Return data for next steps
+    return result;
+  },
+}
+```
+
+3. **Data Flow Between Components:**
+
+- Components access previous step data via the `steps` object
+- Data is passed through in a structured JSON format
+- Different methods for returning data:
+  - Direct return values: `return { data: value }`
+  - Export named values: `$.export("name", value)`
+  - Event emission (triggers): `this.$emit(eventData, metadata)`
+
 ### Implementation Priorities
 
 For the initial MVP, focus on these core capabilities:
@@ -610,3 +709,48 @@ For the initial MVP, focus on these core capabilities:
 5. Research functionality for app discovery
 
 Later phases can add more advanced features like comprehensive testing, bug reporting, and workflow visualization.
+
+### Claude Prompt Templates
+
+To effectively generate components, we'll need to develop specialized prompt templates:
+
+1. **Brainstorming Template:**
+```
+Given the following workflow description: "{description}", 
+generate a complete Pipedream workflow design including:
+
+1. Appropriate trigger type (HTTP, schedule, or app-specific)
+2. Required action steps with proper sequence
+3. Data transformation requirements between steps
+4. Error handling considerations
+5. Expected inputs and outputs
+
+For each component, specify:
+- Component type (source/trigger or action)
+- Required properties and configuration
+- Data flow between components
+- Edge cases to handle
+```
+
+2. **Component Generation Template:**
+```
+Generate a Pipedream {componentType} component that {componentPurpose}.
+
+Required fields:
+- name: "{componentName}"
+- key: "{componentKey}"
+- version: "0.0.1"
+- type: "{source|action}"
+
+The component should:
+{componentRequirements}
+
+Data handling:
+- Input data structure: {inputStructure}
+- Output data structure: {outputStructure}
+- Error handling: {errorHandling}
+
+Follow Pipedream best practices for component development.
+```
+
+These templates will be refined as we develop the tool and learn from real-world usage.
