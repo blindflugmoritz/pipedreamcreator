@@ -169,7 +169,7 @@ class PdManagerClient {
       console.log(result);
       
       throw new Error('Could not parse workflow ID from pdmanager output');
-      }
+      
     } catch (error) {
       console.error(chalk.red('Error creating workflow:'), error.message);
       throw error;
