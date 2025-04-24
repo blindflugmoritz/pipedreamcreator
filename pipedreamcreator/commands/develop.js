@@ -37,13 +37,43 @@ const develop = async (options) => {
     const workflowPath = path.resolve(options.workflow);
     
     // Check if this is an existing Pipedream workflow directory
-    const isExistingWorkflow = validation.isWorkflowDirectory(workflowPath);
+    const hasWorkflowFiles = fs.existsSync(path.join(workflowPath, 'workflows'));
     
-    if (isExistingWorkflow) {
-      // Handle developing an existing workflow
-      await developExistingWorkflow(workflowPath, options);
+    if (hasWorkflowFiles) {
+      // Check if we're developing a specific workflow in the project
+      if (options.workflowId) {
+        const workflowDir = path.join(workflowPath, 'workflows', options.workflowId);
+        if (fs.existsSync(workflowDir)) {
+          await developExistingWorkflow(workflowDir, options);
+        } else {
+          console.log(chalk.red(`Error: Workflow with ID ${options.workflowId} not found in this project`));
+        }
+      } else {
+        // Create a new workflow in this project
+        await developNewWorkflow(workflowPath, options);
+      }
     } else {
-      // Handle creating a new workflow
+      console.log(chalk.yellow(`Warning: The directory ${workflowPath} doesn't have the expected structure.`));
+      console.log(chalk.yellow(`Creating new project structure at ${workflowPath}`));
+      
+      // Create directory if it doesn't exist
+      fs.ensureDirSync(workflowPath);
+      
+      // Create basic structure
+      fs.ensureDirSync(path.join(workflowPath, 'design'));
+      fs.ensureDirSync(path.join(workflowPath, 'workflows'));
+      
+      // Create a basic config.ini if it doesn't exist
+      const configPath = path.join(workflowPath, 'config.ini');
+      if (!fs.existsSync(configPath)) {
+        const configContent = `[project]
+name = ${path.basename(workflowPath)}
+created_at = ${new Date().toISOString()}
+`;
+        fs.writeFileSync(configPath, configContent);
+      }
+      
+      // Develop a new workflow
       await developNewWorkflow(workflowPath, options);
     }
   } catch (error) {
@@ -54,30 +84,59 @@ const develop = async (options) => {
 /**
  * Develop an existing workflow
  */
-const developExistingWorkflow = async (workflowPath, options) => {
-  console.log(chalk.cyan(`Developing existing workflow at ${workflowPath}`));
+const developExistingWorkflow = async (workflowDir, options) => {
+  console.log(chalk.cyan(`Developing existing workflow at ${workflowDir}`));
   
-  // Load workflow.json
-  const workflowJsonPath = path.join(workflowPath, 'workflow.json');
-  const workflowJson = JSON.parse(fs.readFileSync(workflowJsonPath, 'utf8'));
+  // Load workflow.json if it exists
+  const workflowJsonPath = path.join(workflowDir, 'workflow.json');
+  let workflowJson = {};
+  
+  if (fs.existsSync(workflowJsonPath)) {
+    try {
+      workflowJson = JSON.parse(fs.readFileSync(workflowJsonPath, 'utf8'));
+    } catch (e) {
+      console.log(chalk.yellow(`Warning: Could not parse workflow.json: ${e.message}`));
+    }
+  }
   
   // If a specific step is specified, develop just that step
   if (options.step) {
-    await developStep(workflowPath, workflowJson, options.step, options.prompt);
+    await developStep(workflowDir, workflowJson, options.step, options.prompt);
   } else {
     // Otherwise update the entire workflow
-    await updateEntireWorkflow(workflowPath, workflowJson, options.prompt);
+    await updateEntireWorkflow(workflowDir, workflowJson, options.prompt);
   }
 };
 
 /**
  * Develop a new workflow
  */
-const developNewWorkflow = async (workflowPath, options) => {
-  console.log(chalk.cyan(`Creating new workflow at ${workflowPath}`));
+const developNewWorkflow = async (projectPath, options) => {
+  console.log(chalk.cyan(`Creating new workflow in project at ${projectPath}`));
+  
+  // Get project name from config.ini or directory name
+  let projectName = path.basename(projectPath);
+  const configPath = path.join(projectPath, 'config.ini');
+  let projectId = null;
+  
+  if (fs.existsSync(configPath)) {
+    try {
+      const ini = require('ini');
+      const config = ini.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.project && config.project.name) {
+        projectName = config.project.name;
+      }
+      if (config.project && config.project.id) {
+        projectId = config.project.id;
+      }
+    } catch (e) {
+      console.log(chalk.yellow(`Warning: Could not parse config.ini: ${e.message}`));
+    }
+  }
   
   // Check for design.md file
-  const designPath = path.join(workflowPath, 'design.md');
+  const designDir = path.join(projectPath, 'design');
+  const designPath = path.join(designDir, 'design.md');
   let workflowDesign = '';
   
   if (fs.existsSync(designPath)) {
@@ -86,55 +145,104 @@ const developNewWorkflow = async (workflowPath, options) => {
   } else {
     console.log(chalk.yellow('No design.md file found, proceeding with minimal input...'));
     // Use the workflow directory name as a minimal prompt
-    const workflowName = path.basename(workflowPath);
-    workflowDesign = `Create a workflow named "${workflowName}"`;
+    workflowDesign = `Create a workflow named "${options.name || path.basename(projectPath)}"`;
     
     if (options.prompt) {
       workflowDesign += ` that ${options.prompt}`;
     }
+    
+    // Save this minimal design for future reference
+    fs.ensureDirSync(designDir);
+    fs.writeFileSync(designPath, `# ${projectName}\n\n${workflowDesign}`);
   }
   
-  // Create project in Pipedream
-  const spinner = ora('Creating project via pdmanager...').start();
-  const projectName = path.basename(workflowPath);
-  
-  try {
-    const projectId = await pdManagerClient.createProject(projectName);
-    spinner.succeed(`Project created with ID: ${projectId}`);
-    
-    // Create workflow in Pipedream
-    const workflowSpinner = ora('Registering workflow via pdmanager...').start();
-    const workflowId = await pdManagerClient.createWorkflow(projectName, projectId);
-    workflowSpinner.succeed(`Workflow created with ID: ${workflowId}`);
-    
-    // Create proper directory structure with the workflow ID
-    const workflowIdDir = path.join(process.cwd(), 'workflows', workflowId);
-    fs.ensureDirSync(workflowIdDir);
-    
-    // Generate workflow files
-    await generateWorkflowFiles(workflowIdDir, workflowId, projectId, workflowDesign, options.prompt);
-    
-    // Create symlink from original path to the workflow ID directory if they're different
-    if (workflowPath !== workflowIdDir) {
-      // If the original directory exists, back it up
-      if (fs.existsSync(workflowPath) && fs.statSync(workflowPath).isDirectory()) {
-        const backupPath = `${workflowPath}_backup_${Date.now()}`;
-        fs.moveSync(workflowPath, backupPath);
-        console.log(chalk.yellow(`Existing directory backed up to ${backupPath}`));
+  // Create or use existing project in Pipedream
+  if (!projectId) {
+    const spinner = ora('Creating project via pdmanager...').start();
+    try {
+      projectId = await pdManagerClient.createProject(projectName);
+      spinner.succeed(`Project created with ID: ${projectId}`);
+      
+      // Update config.ini with the project ID
+      updateConfigWithProjectId(projectPath, projectId);
+    } catch (error) {
+      spinner.fail(`Failed to create project: ${error.message}`);
+      
+      if (error.message.includes('LIMIT_ACTIVE') || error.message.includes('limit')) {
+        console.log(chalk.red('ERROR: Pipedream API limit reached. Please delete unused projects/workflows and try again.'));
+        return;
       }
       
-      // Create parent directory if it doesn't exist
-      fs.ensureDirSync(path.dirname(workflowPath));
-      
-      // Create symlink
-      fs.symlinkSync(workflowIdDir, workflowPath, 'dir');
-      console.log(chalk.green(`Created symlink from ${workflowPath} to ${workflowIdDir}`));
+      throw error;
+    }
+  } else {
+    console.log(chalk.green(`Using existing project with ID: ${projectId}`));
+  }
+  
+  // Generate workflow name
+  const workflowName = options.name || `${projectName} Workflow`;
+  
+  // Create workflow in Pipedream
+  const workflowSpinner = ora('Creating workflow via pdmanager...').start();
+  let workflowId;
+  
+  try {
+    workflowId = await pdManagerClient.createWorkflow(workflowName, projectId);
+    workflowSpinner.succeed(`Workflow created with ID: ${workflowId}`);
+  } catch (error) {
+    workflowSpinner.fail(`Failed to create workflow: ${error.message}`);
+    
+    if (error.message.includes('LIMIT_ACTIVE_WORKFLOWS')) {
+      console.log(chalk.red('ERROR: Pipedream workflow limit reached. Please delete unused workflows and try again.'));
+      return;
     }
     
-    console.log(chalk.green('✨ Workflow development complete!'));
-  } catch (error) {
-    spinner.fail(`Failed to create project: ${error.message}`);
     throw error;
+  }
+  
+  // Create workflow directory in the project (if it doesn't exist)
+  const workflowsDir = path.join(projectPath, 'workflows');
+  fs.ensureDirSync(workflowsDir);
+  
+  // Create workflow-specific directory
+  const workflowDir = path.join(workflowsDir, workflowId);
+  fs.ensureDirSync(workflowDir);
+  
+  // Generate workflow files
+  await generateWorkflowFiles(workflowDir, workflowId, projectId, workflowDesign, options.prompt);
+  
+  console.log(chalk.green('✨ Workflow development complete!'));
+  console.log(chalk.cyan(`\nWorkflow files created at: ${workflowDir}`));
+};
+
+/**
+ * Update config.ini with project ID
+ */
+const updateConfigWithProjectId = (projectPath, projectId) => {
+  const configPath = path.join(projectPath, 'config.ini');
+  
+  try {
+    const ini = require('ini');
+    let config = {};
+    
+    if (fs.existsSync(configPath)) {
+      config = ini.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+    
+    // Ensure project section exists
+    if (!config.project) {
+      config.project = {};
+    }
+    
+    // Update project ID
+    config.project.id = projectId;
+    
+    // Write back to config.ini
+    fs.writeFileSync(configPath, ini.stringify(config));
+    
+    console.log(chalk.green(`Updated config.ini with project ID: ${projectId}`));
+  } catch (e) {
+    console.log(chalk.yellow(`Warning: Could not update config.ini: ${e.message}`));
   }
 };
 
@@ -260,11 +368,11 @@ const generateWorkflowFiles = async (workflowDir, workflowId, projectId, workflo
 /**
  * Develop a specific step in a workflow
  */
-const developStep = async (workflowPath, workflowJson, stepName, additionalPrompt = '') => {
+const developStep = async (workflowDir, workflowJson, stepName, additionalPrompt = '') => {
   console.log(chalk.cyan(`Developing step: ${stepName}`));
   
   // Prepare the component directory if it doesn't exist
-  const componentsDir = path.join(workflowPath, 'components');
+  const componentsDir = path.join(workflowDir, 'components');
   fs.ensureDirSync(componentsDir);
   const componentPath = path.join(componentsDir, `${stepName}.js`);
   
@@ -278,7 +386,7 @@ const developStep = async (workflowPath, workflowJson, stepName, additionalPromp
   }
   
   // Get the workflow code.js to understand the context
-  const codeJsPath = path.join(workflowPath, 'code.js');
+  const codeJsPath = path.join(workflowDir, 'code.js');
   const codeJs = fs.existsSync(codeJsPath) ? fs.readFileSync(codeJsPath, 'utf8') : '';
   
   // Generate the component
@@ -322,7 +430,7 @@ const developStep = async (workflowPath, workflowJson, stepName, additionalPromp
     fs.writeFileSync(componentPath, cleanedCode);
     
     // Update test fixtures for this component
-    const testFixturesDir = path.join(workflowPath, 'tests', 'fixtures', stepName);
+    const testFixturesDir = path.join(workflowDir, 'tests', 'fixtures', stepName);
     fs.ensureDirSync(testFixturesDir);
     
     // Generate basic test input
@@ -345,11 +453,11 @@ const developStep = async (workflowPath, workflowJson, stepName, additionalPromp
 /**
  * Update an entire workflow
  */
-const updateEntireWorkflow = async (workflowPath, workflowJson, additionalPrompt = '') => {
-  console.log(chalk.cyan(`Updating entire workflow at ${workflowPath}`));
+const updateEntireWorkflow = async (workflowDir, workflowJson, additionalPrompt = '') => {
+  console.log(chalk.cyan(`Updating entire workflow at ${workflowDir}`));
   
   // Get the current code.js
-  const codeJsPath = path.join(workflowPath, 'code.js');
+  const codeJsPath = path.join(workflowDir, 'code.js');
   const currentCodeJs = fs.existsSync(codeJsPath) ? fs.readFileSync(codeJsPath, 'utf8') : '';
   
   // Generate updated workflow files
@@ -437,17 +545,17 @@ const updateEntireWorkflow = async (workflowPath, workflowJson, additionalPrompt
     }
     
     // Write the updated files
-    fs.writeFileSync(path.join(workflowPath, 'workflow.json'), updatedWorkflowJson);
-    fs.writeFileSync(path.join(workflowPath, 'code.js'), updatedCodeJs);
+    fs.writeFileSync(path.join(workflowDir, 'workflow.json'), updatedWorkflowJson);
+    fs.writeFileSync(path.join(workflowDir, 'code.js'), updatedCodeJs);
     
     // Update test fixtures
     const updatedWorkflowObj = JSON.parse(updatedWorkflowJson);
-    generateTestFixtures(workflowPath, updatedWorkflowObj);
+    generateTestFixtures(workflowDir, updatedWorkflowObj);
     
     spinner.succeed('Workflow updated successfully');
     
     return {
-      workflowPath,
+      workflowPath: workflowDir,
       workflowJson: updatedWorkflowObj,
       codeJs: updatedCodeJs
     };

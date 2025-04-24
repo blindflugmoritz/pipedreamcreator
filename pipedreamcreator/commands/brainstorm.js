@@ -18,6 +18,9 @@ const brainstorm = async (description, options) => {
     return;
   }
 
+  let workflowPath;
+  let workflowName;
+
   try {
     // Generate initial workflow idea
     const spinner = ora('Connecting to Claude AI...').start();
@@ -69,11 +72,14 @@ const brainstorm = async (description, options) => {
     }
 
     // Save the final result
-    const workflowName = generateWorkflowName(description);
-    let outputPath = options.output;
+    workflowName = generateWorkflowName(description);
     
-    // If no output path provided, generate one
-    if (!outputPath) {
+    // Determine output location
+    if (options.output) {
+      // Use explicit output path if provided
+      workflowPath = path.resolve(options.output);
+    } else {
+      // Ask if user wants to save
       const { saveResult } = await inquirer.prompt([
         {
           type: 'confirm',
@@ -84,30 +90,60 @@ const brainstorm = async (description, options) => {
       ]);
 
       if (saveResult) {
-        // Create workflows directory if it doesn't exist
-        const workflowsDir = path.join(process.cwd(), 'workflows');
-        fs.ensureDirSync(workflowsDir);
+        // Get directory name from user if not specified
+        const { dirName } = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'dirName',
+            message: 'Enter directory name for this workflow:',
+            default: workflowName
+          }
+        ]);
         
-        // Create subdirectory for this workflow
-        const workflowDir = path.join(workflowsDir, workflowName);
-        fs.ensureDirSync(workflowDir);
-        
-        outputPath = path.join(workflowDir, 'design.md');
+        workflowPath = path.resolve(process.cwd(), dirName);
       }
     }
 
-    // Save if we have an output path
-    if (outputPath) {
+    // Save if we have a workflow path
+    if (workflowPath) {
+      // Create project directory structure
+      fs.ensureDirSync(workflowPath);
+      
+      // Create design directory
+      const designDir = path.join(workflowPath, 'design');
+      fs.ensureDirSync(designDir);
+      
+      // Save design document
+      const designPath = path.join(designDir, 'design.md');
       const designContent = `# ${workflowName}\n\n${workflowIdea}`;
-      fs.writeFileSync(outputPath, designContent);
-      console.log(chalk.green(`💾 Workflow design saved to ${outputPath}`));
+      fs.writeFileSync(designPath, designContent);
+      
+      // Create empty workflows directory to maintain consistent structure
+      fs.ensureDirSync(path.join(workflowPath, 'workflows'));
+      
+      // Create config.ini with initial metadata
+      const configPath = path.join(workflowPath, 'config.ini');
+      const configContent = `[project]
+name = ${workflowName}
+created_at = ${new Date().toISOString()}
+
+[design]
+description = ${description.replace(/\n/g, ' ')}
+`;
+      fs.writeFileSync(configPath, configContent);
+      
+      console.log(chalk.green(`💾 Workflow design saved to ${workflowPath}`));
       console.log(chalk.green('✅ Workflow design saved and ready for development!'));
+      
+      // Generate a development instruction for the user
+      console.log(chalk.cyan(`\nTo develop this workflow, run:`));
+      console.log(chalk.white(`pdcreator develop --workflow ${workflowPath}`));
     }
 
     return {
       name: workflowName,
       design: workflowIdea,
-      path: outputPath
+      path: workflowPath
     };
   } catch (error) {
     console.error(chalk.red('Error generating workflow:'), error.message);

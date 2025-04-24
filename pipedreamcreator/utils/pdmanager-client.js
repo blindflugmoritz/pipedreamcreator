@@ -150,6 +150,11 @@ class PdManagerClient {
     try {
       const result = await this.executeCommand('create-workflow', args);
       
+      // Check for API limit errors in the output
+      if (result.includes('LIMIT_ACTIVE_WORKFLOWS') || result.includes('Limit Error')) {
+        throw new Error('LIMIT_ACTIVE_WORKFLOWS: Pipedream workflow limit reached');
+      }
+      
       // Extract workflow ID from the output
       // The create-workflow command outputs the ID in this format: "✅ Workflow created successfully with ID: p_abc123"
       const match = result.match(/Workflow created successfully with ID: ([a-zA-Z0-9_]+)/);
@@ -162,6 +167,12 @@ class PdManagerClient {
       const altMatch = result.match(/Workflow ID: ([a-zA-Z0-9_]+)/);
       if (altMatch && altMatch[1]) {
         return altMatch[1];
+      }
+      
+      // Any workflow ID format: p_XXXXXX
+      const idMatch = result.match(/p_[a-zA-Z0-9]+/);
+      if (idMatch) {
+        return idMatch[0];
       }
       
       // If we can't find the workflow ID, log the entire result for debugging
