@@ -4,16 +4,10 @@ const { program } = require('commander');
 const { open } = require('./commands/open');
 const { newProject } = require('./commands/new-project');
 const { login } = require('./commands/login');
-const { loginSimple } = require('./commands/login-simple');
-const { loginDirect } = require('./commands/login-direct');
-const { loginTargeted } = require('./commands/login-targeted');
-const { analyzeLoginPage } = require('./commands/analyze-login-page');
-const { analyzeProjectsPage } = require('./commands/analyze-projects-page');
-const { createProjectAfterLogin } = require('./commands/create-project-after-login');
 const { createWorkflow } = require('./commands/create-workflow');
 const { listTriggers } = require('./commands/list-triggers');
 const { listSteps } = require('./commands/list-steps');
-const { quickTest } = require('./commands/quick-test');
+const { listWorkflows } = require('./commands/list-workflows');
 
 program
   .version('1.0.0')
@@ -31,7 +25,7 @@ program
 program
   .command('new-project')
   .description('Create a new Pipedream project')
-  .option('-n, --name <name>', 'Project name')
+  .option('-n, --name <n>', 'Project name')
   .option('-u, --username <username>', 'Pipedream username/email')
   .option('-p, --password <password>', 'Pipedream password')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional)')
@@ -41,60 +35,16 @@ program
 
 program
   .command('login')
-  .description('Test login to Pipedream')
+  .description('Login to Pipedream (for testing credentials)')
   .option('-u, --username <username>', 'Pipedream username/email')
   .option('-p, --password <password>', 'Pipedream password')
   .action(login);
 
 program
-  .command('login-simple')
-  .description('Simple login to Pipedream (more reliable)')
-  .option('-u, --username <username>', 'Pipedream username/email')
-  .option('-p, --password <password>', 'Pipedream password')
-  .action(loginSimple);
-
-program
-  .command('login-direct')
-  .description('Direct login to Pipedream with Auth0 support')
-  .option('-u, --username <username>', 'Pipedream username/email')
-  .option('-p, --password <password>', 'Pipedream password')
-  .action(loginDirect);
-
-program
-  .command('login-targeted')
-  .description('Targeted login based on page analysis')
-  .option('-u, --username <username>', 'Pipedream username/email')
-  .option('-p, --password <password>', 'Pipedream password')
-  .action(loginTargeted);
-
-program
-  .command('create-project')
-  .description('Create a new Pipedream project after login')
-  .option('-u, --username <username>', 'Pipedream username/email')
-  .option('-p, --password <password>', 'Pipedream password')
-  .option('-n, --name <n>', 'Project name')
-  .action(createProjectAfterLogin);
-
-program
-  .command('analyze-login')
-  .description('Analyze the Pipedream login page structure')
-  .action(analyzeLoginPage);
-
-program
-  .command('analyze-projects')
-  .description('Analyze the Pipedream projects page structure')
-  .action(analyzeProjectsPage);
-
-program
-  .command('quick-test')
-  .description('Quick browser test to diagnose window closing issues')
-  .action(quickTest);
-
-program
   .command('create-workflow')
   .description('Create a new workflow in a Pipedream project')
   .option('-p, --project <id>', 'Project ID (optional if in project directory)')
-  .option('-n, --name <name>', 'Workflow name')
+  .option('-n, --name <n>', 'Workflow name')
   .option('-t, --template <id>', 'Template ID to use (optional)')
   .option('-d, --description <desc>', 'Workflow description (optional)')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
@@ -119,5 +69,12 @@ program
   .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
   .option('-d, --detailed', 'Show detailed component information')
   .action(listSteps);
+
+program
+  .command('list-workflows')
+  .description('List all workflows in a project')
+  .option('-p, --project <id>', 'Project ID (optional if in project directory)')
+  .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
+  .action(listWorkflows);
 
 program.parse(process.argv);
