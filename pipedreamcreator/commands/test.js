@@ -146,10 +146,12 @@ const testWorkflow = async (workflowPath) => {
       
       // Show trigger execution
       console.log(chalk.cyan('⏱️ Trigger:'), 
-        result.steps.trigger.success ? chalk.green('✅ Success') : chalk.red('❌ Failed'));
+        result.steps && result.steps.trigger && result.steps.trigger.success ? 
+          chalk.green('✅ Success') : 
+          chalk.yellow('⚠️ No trigger results'));
       
       // Show step execution
-      const steps = Object.keys(result.steps).filter(step => step !== 'trigger');
+      const steps = result.steps ? Object.keys(result.steps).filter(step => step !== 'trigger') : [];
       
       for (const step of steps) {
         const stepResult = result.steps[step];
