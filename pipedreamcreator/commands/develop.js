@@ -114,8 +114,9 @@ const developExistingWorkflow = async (workflowDir, options) => {
 const developNewWorkflow = async (projectPath, options) => {
   console.log(chalk.cyan(`Creating new workflow in project at ${projectPath}`));
   
-  // Get project name from config.ini or directory name
-  let projectName = path.basename(projectPath);
+  // Always use directory name as project name for consistency
+  const dirName = path.basename(projectPath);
+  let projectName = dirName; // Use directory name directly
   const configPath = path.join(projectPath, 'config.ini');
   let projectId = null;
   
@@ -123,11 +124,15 @@ const developNewWorkflow = async (projectPath, options) => {
     try {
       const ini = require('ini');
       const config = ini.parse(fs.readFileSync(configPath, 'utf8'));
-      if (config.project && config.project.name) {
-        projectName = config.project.name;
-      }
+      // Only use project ID from config, not name
       if (config.project && config.project.id) {
         projectId = config.project.id;
+      }
+      // Update config with correct name if different
+      if (config.project && config.project.name !== dirName) {
+        config.project.name = dirName;
+        fs.writeFileSync(configPath, ini.stringify(config));
+        console.log(chalk.yellow(`Updated config.ini to use directory name: ${dirName}`));
       }
     } catch (e) {
       console.log(chalk.yellow(`Warning: Could not parse config.ini: ${e.message}`));
@@ -179,8 +184,8 @@ const developNewWorkflow = async (projectPath, options) => {
     console.log(chalk.green(`Using existing project with ID: ${projectId}`));
   }
   
-  // Generate workflow name
-  const workflowName = options.name || `${projectName} Workflow`;
+  // Use project name directly as workflow name for consistency
+  const workflowName = options.name || projectName;
   
   // Create workflow in Pipedream
   const workflowSpinner = ora('Creating workflow via pdmanager...').start();
