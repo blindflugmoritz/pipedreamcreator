@@ -141,6 +141,12 @@ class PdManagerClient {
       args.push('--project', projectId);
     }
     
+    // Get API key from config
+    const apiKey = configManager.get('pipedream.api_key');
+    if (apiKey) {
+      args.push('--apiKey', apiKey);
+    }
+    
     try {
       const result = await this.executeCommand('create-workflow', args);
       
