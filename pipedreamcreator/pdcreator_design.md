@@ -8,77 +8,228 @@ The pdcreator tool should be implemented in the folder `/Users/mz/coding/pipedre
 +-- pipedreamcreator/   # New tool to be implemented
     +-- commands/
     |   +-- brainstorm.js      # Generate workflow ideas with Claude
-    |   +-- research.js        # Research Pipedream apps and suggest integrations
-    |   +-- scaffold.js        # Generate component templates
     |   +-- develop.js         # Local development environment
-    |   +-- test.js            # Test component functionality
-    |   +-- build.js           # Build/package components
-    |   +-- deploy.js          # Upload to Pipedream using pdmanager
+    |   +-- test.js            # Test component and workflow functionality
+    |   +-- config.js          # Manage tool configuration
     +-- templates/
     |   +-- action/            # Action component templates
     |   +-- source/            # Trigger component templates
-    |   +-- custom/            # Custom templates
-    |   +-- workflows/         # Full workflow templates
+    |   +-- prompts/           # Claude AI prompt templates
     +-- testing/
     |   +-- mocks/             # Mock Pipedream environment
     |   +-- fixtures/          # Test data
-    |   +-- runner.js          # Test runner
     +-- utils/
         +-- ai-client.js       # Interface with Claude AI
         +-- pdmanager-client.js # Interface with pdmanager
         +-- validation.js      # Component schema validation
+        +-- config-manager.js  # Configuration management
 ```
 
-This architecture integrates with the existing pdmanager to handle authentication and deployment, with a focus on streamlining the component development lifecycle:
+This architecture integrates with the existing pdmanager to handle authentication and deployment, with a focus on four core functionalities:
 
-1. **Brainstorming** - Generate workflow ideas and structures using Claude AI
-2. **Scaffolding** - Generate boilerplate for new components
-3. **Development** - Local editing with proper validation
-4. **Testing** - Verify functionality before deployment
-5. **Building** - Package components for deployment
-6. **Deployment** - Upload to Pipedream using the pdmanager integration
+1. **Configuration** - Manage API credentials and tool settings
+2. **Brainstorming** - Generate workflow ideas and structures using Claude AI
+3. **Development** - Local development environment with hot-reloading
+4. **Testing** - Verify functionality of components and workflows
 
-## Usage Examples
+## Command Specifications
 
-```
-# Install the tool
-npm install -g pdcreator
+### Config Command
 
-# Brainstorm a workflow 
-pdcreator brainstorm "Monitor Stripe for new customers, send welcome email via SendGrid"
+The `config` command manages the tool's configuration, including API credentials and other settings.
 
-# Research Pipedream apps for an idea
-pdcreator research "CRM integration for customer data sync"
+```bash
+# Interactive setup
+pdcreator config setup
 
-# Research specific app capabilities
-pdcreator research --app "hubspot" --action "contact"
+# View current configuration
+pdcreator config list
 
-# Scaffold components from brainstormed output
-pdcreator scaffold --from-brainstorm workflow_12345
+# Set individual configuration values
+pdcreator config set <key> <value>
 
-# Create individual components
-pdcreator component new --type source --name custom-stripe-source
-
-# Interactive development with live preview
-pdcreator develop ./components/custom-stripe-source --preview
-
-# Test with scenarios and mocked API responses
-pdcreator test ./components/custom-stripe-source --coverage
-
-# Integration testing across full workflow
-pdcreator test-workflow ./workflows/customer-onboarding
-
-# Deploy to dev environment
-pdcreator deploy ./components/custom-stripe-source --env dev
-
-# Promote to production
-pdcreator promote --from dev --to prod component_id
-
-# Deploy with pdmanager
-pdmanager create-workflow --path ./workflows/brainstormed-workflow
+# Get a configuration value
+pdcreator config get <key>
 ```
 
-The brainstorm command leverages Claude to generate structured workflows with component recommendations that match the pdmanager format, ensuring seamless integration between the tools.
+The config command:
+1. Creates and manages the central configuration file (~/.pdcreator/config.json)
+2. Handles API credentials for Claude, GitHub, and Pipedream
+3. Securely stores sensitive information
+4. Makes credentials available to all other commands
+5. Provides inheritance of credentials to generated workflows
+
+#### Implementation Details
+
+- Create a secure storage mechanism for API keys and credentials
+- Implement encryption for sensitive information
+- Provide both interactive and command-line configuration options
+- Share configuration with pdmanager when appropriate
+- Auto-detect existing credentials from environment variables or pdmanager configuration
+
+### Brainstorm Command
+
+The `brainstorm` command is the beginning of each development process. It leverages Claude to generate structured workflows with component recommendations that match the pdmanager format, ensuring seamless integration between the tools.
+
+```bash
+# Generate workflow ideas with AI assistance
+pdcreator brainstorm "Monitor GitHub for new issues and post to Slack"
+
+# Specify output location
+pdcreator brainstorm "Send daily weather updates to email" --output workflow-ideas.md
+```
+
+When a user runs the brainstorm command:
+1. The tool connects to Claude AI with the provided description
+2. Claude generates a comprehensive workflow design including:
+   - Trigger type recommendation
+   - Required steps and their sequence
+   - Data flow between components
+   - Sample data structures
+3. The output is presented to the user for feedback
+4. The brainstorm session stays open interactively until the user is satisfied
+5. When approved, the brainstorm results are saved for use in the develop command
+
+The brainstorm command focuses on creating reusable steps in the workflow design, ensuring that components can be leveraged across multiple workflows when appropriate.
+
+#### Implementation Details
+
+- Use the Anthropic API client to interact with Claude
+- Format prompts to elicit structured responses with specific sections
+- Parse and format the AI response to be immediately useful
+- Implement an interactive feedback loop to refine the workflow design
+- Save approved designs for use in the develop command
+
+### Develop Command
+
+The `develop` command is responsible for actually writing the workflow folder and data structure, including all steps, code, and required IDs. It transforms the brainstormed ideas into working implementation.
+
+```bash
+# Generate code for an entire workflow
+pdcreator develop -w ./workflows/github-to-slack
+
+# Generate code for a specific step within a workflow
+pdcreator develop -w ./workflows/github-to-slack -s format-message
+
+# Provide additional prompt for better specification
+pdcreator develop -w ./workflows/github-to-slack --prompt "Include issue priority detection"
+```
+
+The develop command:
+1. Takes the saved brainstorm results as input
+2. Calls `pdmanager create-project` to establish a new project on Pipedream.com (if needed)
+3. Calls `pdmanager create-workflow` to create a new workflow online and obtain the proper p_XXXXXX workflow ID
+4. Creates the necessary directory structure following the p_XXXXXX format from Pipedream.com
+5. Generates workflow.json with the proper IDs and configuration
+6. Writes code.js files for each component
+7. Automatically generates tests for the workflow and components
+8. Provides flexibility to develop entire workflows or individual steps
+
+#### Implementation Details
+
+- Create a workflow generator that adheres to Pipedream's format
+- Implement code generation for different component types
+- Leverage Claude AI for writing component code
+- Generate appropriate test fixtures for automated testing
+- Ensure all IDs and references are correctly linked
+- Maintain compatibility with pdmanager's expected structure
+
+#### Development Options
+
+- Full workflow generation (-w): Create all files for a complete workflow
+- Single step generation (-w -s): Focus on one component in a workflow
+- Additional prompt (--prompt): Provide extra specification for Claude
+- Test generation (automatic): Create test fixtures for each component
+
+### Test Command
+
+The `test` command runs a test environment in which you can execute workflows and verify that they generate the correct output data.
+
+```bash
+# Test a component
+pdcreator test --path ./workflows/p_ABC123/components/github-webhook
+
+# Test a workflow
+pdcreator test --path ./workflows/p_ABC123
+
+# Run tests in watch mode
+pdcreator test --path ./workflows/p_ABC123/components/send-message --watch
+```
+
+The test command:
+1. Sets up a controlled testing environment
+2. Uses the test fixtures generated by the develop command
+3. Executes workflows with simulated input data
+4. Validates that the output data matches expected results
+5. Provides detailed reports on test success or failure
+6. Monitors data flow between components
+
+#### Component Testing
+
+For components, the testing framework:
+- Simulates the Pipedream runtime environment
+- Mocks external API dependencies
+- Provides test data based on generated fixtures
+- Validates outputs against expected results
+- Tests error handling and edge cases
+- Provides detailed logs of component execution
+
+#### Workflow Testing
+
+For workflows, the testing framework:
+- Loads all components in the workflow
+- Runs the entire workflow with test trigger data
+- Tracks data transformations between steps
+- Validates that each step receives and produces correct data
+- Ensures the final output matches expected results
+- Tests error propagation and handling across components
+
+## Core Utilities
+
+### AI Client
+
+The AI client provides a clean interface to Claude:
+
+```javascript
+// Example usage
+const aiClient = require('../utils/ai-client');
+
+// Generate workflow ideas
+const workflowDesign = await aiClient.brainstormWorkflow(
+  "Monitor GitHub for new issues and send to Slack"
+);
+
+// Generate component code
+const componentCode = await aiClient.generateComponent(
+  "action", 
+  {
+    name: "Send Slack Message",
+    description: "Sends a formatted message to a Slack channel",
+    app: "slack"
+  }
+);
+```
+
+### Mock Pipedream Runtime
+
+The mock runtime simulates Pipedream's environment:
+
+```javascript
+// Example of the mock runtime
+const mockRuntime = new PipedreamMock();
+
+// Load a component
+await mockRuntime.loadComponent('./components/my-component/index.js');
+
+// Run the component with test data
+const result = await mockRuntime.runComponent({
+  body: { test: "data" },
+  headers: { "content-type": "application/json" }
+});
+
+// Access emitted events
+const emittedEvents = mockRuntime.getEmittedEvents();
+```
 
 ## Compatibility with pdmanager
 
@@ -86,671 +237,225 @@ To ensure proper integration with the existing pdmanager tool, pdcreator must ma
 
 ### File Structure Compatibility
 - Generated workflows must follow the structure `/workflows/p_XXXXXX/workflow.json` and `/workflows/p_XXXXXX/code.js`
-- Project IDs (p_XXXXXX) must follow the same format used by pdmanager
-- Directory structure must be maintained for pdmanager to recognize and process workflows
+- The p_XXXXXX ID format must be obtained from Pipedream.com through pdmanager commands
+- Component files must be organized in a way that's compatible with pdmanager
 
 ### Configuration Compatibility
 - Must use and respect the same `config.ini` format as pdmanager
 - Authentication credentials should be shared between the tools
-- Environment variables and secrets management must be compatible
 
-### Workflow JSON Format
-- Generated workflow.json must contain all required fields:
-  - id, name, active, components array with proper structure
-  - Each component needs valid configuration matching Pipedream's requirements
-  - Proper connection references and account references
-
-### Code.js Format
-- Must generate code.js files that follow the expected structure:
-  - Proper exports format
-  - Compatible with Pipedream's runtime environment
-  - Follows the same import/require patterns as existing code.js files
-
-### Command Line Interface
-- Similar argument structure where appropriate
-- Consistent output formatting
-- Ability to chain commands between tools (pdcreator output → pdmanager input)
-
-This compatibility ensures users can seamlessly move between brainstorming and development in pdcreator to deployment and management in pdmanager without manual reformatting or restructuring of files.
-
-## REST API Compatibility
-
-All workflow data structures generated by pdcreator must strictly adhere to the Pipedream REST API specifications as documented at https://pipedream.com/docs/rest-api/:
-
-### Workflow Structure
-Generated workflow.json files must follow the exact structure defined in the REST API:
-
-```json
-{
-  "id": "p_abc123",
-  "name": "My Workflow",
-  "active": true,
-  "created_at": "2023-01-01T00:00:00Z",
-  "updated_at": "2023-01-01T00:00:00Z",
-  "description": "Workflow description",
-  "settings": {
-    "execution_timeout": 300,
-    "concurrency_type": "ORDERED",
-    "concurrency": 1
-  },
-  "components": [
-    {
-      "id": "c_123abc",
-      "key": "trigger",
-      "app": "app_id",
-      "type": "source",
-      "metadata": {
-        "name": "Component name",
-        "description": "Component description"
-      },
-      "config": {}
-    }
-  ]
-}
-```
-
-### API Endpoints Used
-The following API endpoints will be utilized:
-
-- `GET /v1/apps` - For the research function to fetch available apps
-- `GET /v1/apps/{app_id}` - To get detailed information about specific apps
-- `GET /v1/components` - To discover available components
-- `GET /v1/components/{component_id}` - To get component details
-- `GET /v1/workflows` - To list existing workflows
-- `POST /v1/workflows` - To create new workflows
-- `GET /v1/workflows/{workflow_id}` - To fetch specific workflow details
-
-## App Research Functionality
-
-The `pdcreator research` command enhances the development process by:
-
-1. **App Discovery**:
-   - Searches Pipedream's app directory via `/v1/apps` API endpoint
-   - Filters apps based on keywords, categories, or functionality
-   - Returns ranked suggestions based on relevance to the search query
-
-2. **App Integration Analysis**:
-   - Analyzes available triggers and actions for recommended apps
-   - Suggests optimal integration points for the user's described workflow
-   - Evaluates authentication requirements and configuration complexity
-
-3. **AI-Enhanced Recommendations**:
-   - Utilizes Claude AI to analyze search results and provide higher-level insights
-   - Generates sample configurations for recommended apps
-   - Suggests common use cases and best practices for specific integrations
-
-4. **Interactive Exploration**:
-   - Allows interactive browsing of app capabilities
-   - Provides example code snippets for utilizing specific app actions
-   - Offers documentation references for deeper understanding
-
-This functionality enables developers to quickly discover the most appropriate apps for their workflow requirements and understand how to effectively integrate them into their solutions.
-
-## Testing Methodology
-
-The testing approach for pdcreator follows a test-driven development methodology with comprehensive validation at two distinct levels:
-
-1. **Component-Level Testing** - Testing individual steps/components in isolation
-2. **Workflow-Level Testing** - Testing complete workflows with integrated components
-
-### Test-First Development
-
-1. **Test Data Generation**:
-   - For each component or workflow, first generate representative test input data
-   - Create both typical and edge case scenarios
-   - Store test data in structured JSON files in `/testing/fixtures/{component_name}/`
-
-2. **Expected Output Generation**:
-   - Define expected output data for each test case
-   - Document expected console logs, warnings, and error messages
-   - Store expected outputs alongside test data in `/testing/fixtures/{component_name}/expected/`
-
-3. **Mock Environment Setup**:
-   - Create mocks for external APIs and services
-   - Simulate Pipedream runtime environment
-   - Configure controlled test conditions to ensure repeatability
-
-### Component-Level Testing
-
-Component tests focus on individual Pipedream components, testing each step in isolation to ensure they perform their specific functions correctly.
-
-```javascript
-// Example component test structure
-describe('Stripe Customer Created Trigger', () => {
-  const fixtures = loadFixtures('stripe-customer-created');
-  
-  beforeEach(() => {
-    setupMocks(fixtures.mocks);
-  });
-
-  it('should detect new customers and emit proper event', async () => {
-    // Arrange
-    const component = loadComponent('stripe-customer-created');
-    const inputData = fixtures.inputs.validCustomer;
-    const expectedOutput = fixtures.expected.validCustomer;
-    const logCapture = new LogCapture();
-    
-    // Act
-    const result = await runComponentWithFixtures(component, inputData);
-    
-    // Assert
-    expect(result.outputData).toEqual(expectedOutput);
-    expect(logCapture.logs).toContain(fixtures.expected.consoleOutput);
-  });
-  
-  // Testing specific component methods
-  describe('parseCustomerData()', () => {
-    it('should extract relevant fields from customer object', () => {
-      const parser = component.methods.parseCustomerData;
-      const result = parser(fixtures.inputs.complexCustomer);
-      expect(result).toEqual(fixtures.expected.parsedCustomerData);
-    });
-  });
-});
-
-### Workflow-Level Testing
-
-Workflow tests validate the entire flow from trigger to final action, ensuring components work together properly.
-
-```javascript
-// Example workflow test structure
-describe('Customer Onboarding Workflow', () => {
-  const fixtures = loadFixtures('workflows/customer-onboarding');
-  
-  beforeEach(() => {
-    setupWorkflowMocks(fixtures.mocks);
-  });
-
-  it('should process a new customer through the entire workflow', async () => {
-    // Arrange
-    const workflow = loadWorkflow('customer-onboarding');
-    const triggerEvent = fixtures.inputs.newCustomerEvent;
-    const expectedFinalState = fixtures.expected.workflowCompletion;
-    const logCapture = new LogCapture();
-    
-    // Act
-    const result = await executeWorkflow(workflow, triggerEvent);
-    
-    // Assert
-    expect(result.finalState).toEqual(expectedFinalState);
-    expect(result.stepResults).toEqual(fixtures.expected.stepOutputs);
-    expect(logCapture.logs).toMatchSnapshot(fixtures.expected.workflowLogs);
-  });
-});
-```
-
-### Testing Command Usage
-
-The pdcreator CLI provides specific commands for testing at different levels:
-
-```bash
-# Test a specific component
-pdcreator test-component ./components/stripe-webhook
-
-# Test a specific method within a component
-pdcreator test-component ./components/stripe-webhook --method processWebhook
-
-# Test a complete workflow
-pdcreator test-workflow ./workflows/customer-onboarding
-
-# Run all tests with coverage reporting
-pdcreator test --coverage
-
-# Watch mode for development
-pdcreator test --watch
-```
-
-### Validation Types
-
-1. **Component-Level Validation**:
-   - **Unit Testing** - Testing individual methods and functions
-   - **Interface Testing** - Validating component inputs and outputs
-   - **Error Handling** - Testing component behavior with invalid inputs
-   - **Method-Level Testing** - Targeted tests for specific component methods
-
-2. **Workflow-Level Validation**:
-   - **End-to-End Testing** - Testing the complete flow from trigger to final action
-   - **Integration Points** - Validating data passing between components
-   - **Error Propagation** - Testing error handling across multiple steps
-   - **State Management** - Validating workflow state throughout execution
-
-3. **Console Output Validation**:
-   - **Log Pattern Matching** - Verifying log patterns for debugging
-   - **Error Message Quality** - Ensuring clear and actionable error messages
-   - **Audit Trail Validation** - Verifying proper activity logging
-
-4. **Performance Testing**:
-   - **Execution Time** - Measuring against established baselines
-   - **Resource Usage** - Validating memory and CPU usage
-   - **API Efficiency** - Monitoring external API call patterns and frequencies
-   - **Rate Limit Testing** - Ensuring components handle API rate limits gracefully
-
-### Test Fixtures Structure
-
-Test fixtures are organized to support both component and workflow testing:
-
-```
-/testing/
-  /fixtures/
-    /components/
-      /stripe-webhook/
-        inputs/
-          valid-customer-created.json
-          invalid-payload.json
-        expected/
-          valid-customer-output.json
-          error-response.json
-          expected-logs.json
-        mocks/
-          stripe-api-responses.json
-      /sendgrid-email/
-        ...
-    /workflows/
-      /customer-onboarding/
-        inputs/
-          trigger-event.json
-        expected/
-          final-state.json
-          step-outputs.json
-          workflow-logs.json
-        mocks/
-          all-services.json
-```
-
-### Continuous Testing
-
-Testing is integrated throughout the development lifecycle:
-
-1. **Development Phase**:
-   - Use `pdcreator test --watch` for continuous testing during development
-   - Immediate feedback loop when code changes affect test outcomes
-
-2. **Pre-Deployment Validation**:
-   - Run full test suite before deployment with `pdcreator test --full`
-   - Verify against all test fixtures and scenarios
-
-3. **Regression Prevention**:
-   - Maintain growing test library to prevent regressions
-   - Automatically run previous tests when components are modified
-
-4. **CI/CD Integration**:
-   - Automated testing on commit/push
-   - Test matrix for different configurations and environments
-   - Performance tracking across builds
-
-This comprehensive testing approach ensures high reliability of both individual components and complete workflows created with pdcreator, providing confidence that they will function correctly when deployed to production environments.
-
-## Pipedream Data Flow Reference
-
-Understanding how data flows between steps is critical for proper component development and testing:
-
-### Step Data Return
-
-Each Pipedream step can return data in various ways:
-
-```javascript
-// Common patterns for returning data from steps
-export default defineComponent({
-  async run({steps, $}) {
-    // Method 1: Return data directly (available as steps.<step-id>.returnValue)
-    return {
-      user: {
-        id: 123,
-        name: "Test User"
-      }
-    };
-    
-    // Method 2: Use $.export (available as steps.<step-id>)
-    $.export("userId", 123);
-    $.export("userName", "Test User");
-    
-    // Method 3: Emit events (for sources/triggers)
-    this.$emit({
-      id: 123,
-      name: "Test User"
-    });
-  }
-});
-```
-
-### Accessing Data Between Steps
-
-Data is accessed differently depending on the source:
-
-```javascript
-export default defineComponent({
-  async run({steps, $}) {
-    // Access data from previous steps
-    
-    // 1. Accessing returnValue from step with ID "fetch_user"
-    const user = steps.fetch_user.returnValue;
-    console.log(`User ID: ${user.id}`);
-    
-    // 2. Accessing exported variables from step with ID "fetch_user"
-    const userId = steps.fetch_user.userId;
-    const userName = steps.fetch_user.userName;
-    
-    // 3. Accessing trigger data
-    const webhookData = steps.trigger.event;
-    
-    // 4. Accessing authentication data (common pattern)
-    const apiKey = auths.service_name.api_key;
-    
-    // Process data and return for next steps
-    return {
-      processedData: {
-        combinedName: `${userName} (ID: ${userId})`,
-        receivedFrom: webhookData.source
-      }
-    };
-  }
-});
-```
-
-This reference ensures consistent handling of data flow in components developed with pdcreator, both for implementation and testing purposes.
-
-## Simplified User Experience
-
-The pdcreator tool is designed with simplicity in mind, offering an intuitive workflow for users:
-
-### Core Commands
-
-```bash
-# Generate workflow ideas with AI assistance
-pdcreator brainstorm "Monitor Shopify for new orders and add customers to Mailchimp"
-
-# Create new workflow with initial implementation
-pdcreator create shopify-to-mailchimp
-```
-
-When running the `create` command, pdcreator:
-1. Launches an interactive wizard to gather basic requirements
-2. Automatically calls Claude Sonnet 3.7 API to generate initial implementation
-3. Creates all necessary workflow files (workflow.json, code.js)
-4. Generates starter test fixtures based on expected data patterns
-5. Produces a complete, working implementation ready for testing
-
-```bash
-# Run all tests with automatic bug reporting
-pdcreator -t
-```
-
-### Automated Testing & Bug Reports
-
-The testing feature (`pdcreator -t`) provides streamlined validation:
-
-- Automatically runs all component and workflow tests
-- Generates detailed bug reports for any failures
-- Creates formatted issue reports for each bug found
-- Includes reproduction steps and expected vs. actual results
-- Saves bug reports to `/reports/bugs/` directory
-- Provides a concise summary of all detected issues
-
-### AI Implementation & Refinement
-
-The pdcreator tool leverages Claude Sonnet 3.7 AI in two key ways:
-
-1. **Automated Initial Implementation:**
-   - The `pdcreator create` command directly uses Claude Sonnet 3.7 API
-   - Generates complete, working code based on requirements
-   - Implements both workflow.json configuration and code.js functionality
-   - Applies best practices and patterns automatically
-
-2. **Interactive Refinement:**
-   Users can further leverage Claude directly within workflow directories:
-
-```bash
-# Navigate to a workflow directory
-cd /workflows/shopify-to-mailchimp/
-
-# Use Claude to develop or modify components
-claude
-```
-
-Claude will read the `WORKFLOW.md` file in each workflow directory, which follows this structured format:
-
-```markdown
-# Workflow: Shopify to Mailchimp Customer Sync
-
-## Purpose
-Automatically add new Shopify customers to a Mailchimp audience when they place their first order.
-
-## Components
-1. **Trigger: Shopify New Order**
-   - Trigger on new order events
-   - Filter for first-time customers only
-
-2. **Action: Extract Customer Data**
-   - Extract email, first name, last name
-   - Format data for Mailchimp
-
-3. **Action: Mailchimp Add Subscriber**
-   - Add customer to specific audience
-   - Set appropriate tags
-   - Handle duplicates gracefully
-
-## Data Flow
-1. Shopify Order → Extract email and name from order.customer object
-2. Transform → Format as {email, merge_fields: {FNAME, LNAME}}
-3. Mailchimp → Send formatted data to add_subscriber endpoint
-
-## Expected Behavior
-- New customers should appear in Mailchimp within 5 minutes
-- Duplicate emails should update existing records, not error
-- Orders with missing emails should log error but not fail workflow
-
-## Error Handling
-- If Mailchimp API is unavailable, retry 3 times with exponential backoff
-- Log all API failures with detailed error messages
-- For malformed data, skip processing but log issue
-
-## Testing Requirements
-- Test with various order formats from Shopify
-- Verify handling of international characters in names
-- Confirm proper tagging in Mailchimp
-```
-
-This structured format ensures Claude has all the necessary information to develop or modify components effectively.
-
-This approach combines the power of AI-assisted development with a straightforward, intuitive command structure that minimizes complexity while maintaining full functionality.
+### Command Integration
+- pdcreator must call pdmanager commands to register projects and workflows
+- Must use `pdmanager create-project` to establish a new project and get valid project IDs
+- Must use `pdmanager create-workflow` to create new workflows and obtain proper workflow IDs
+- This ensures all workflows are properly registered with Pipedream.com
 
 ## Implementation Requirements
 
 To ensure successful implementation of pdcreator, the following specifications should be followed:
 
 ### Authentication & Configuration
+- Use the configuration system to store and retrieve all credentials  
+- Store credentials in a central configuration file (~/.pdcreator/config.json)
+- Securely manage all API keys and authentication information
+- Support the following API credentials:
+  - Claude API key for AI assistance
+  - GitHub API token for repository interactions
+  - Pipedream API key for API operations
+  - Pipedream username and password for authentication
+- Share authentication with pdmanager when appropriate
+- Provide fallbacks for missing credentials (environment variables, manual input)
+- Support credential inheritance for created workflows
+- Provide a configuration command to set up these credentials:
+  ```bash
+  # Set up credentials interactively
+  pdcreator config setup
+  
+  # Set individual credentials
+  pdcreator config set claude.api_key "your-api-key"
+  pdcreator config set github.token "your-github-token"
+  pdcreator config set pipedream.api_key "your-pd-api-key"
+  pdcreator config set pipedream.username "your-username"
+  pdcreator config set pipedream.password "your-password"
+  ```
+- Inherit these credentials to workflows created by the tool
+- Securely store sensitive information with proper encryption
+- Use these credentials automatically when connecting to services
 
-1. **API Authentication**
-   - Share authentication with pdmanager
-   - Read API credentials from .env file in workflow folders
-   - Claude API key: Use Sonnet 3.7 with appropriate authentication
+### Storage Strategy
+- User preferences: `~/.pdcreator/config.json`
+- Component templates: `~/.pdcreator/templates/`
+- Project cache: `./.pdcreator-cache/` in project directories
 
-2. **Storage Strategy**
-   - User preferences: `~/.pdcreator/config.json`
-   - Component templates: `~/.pdcreator/templates/`
-   - Project cache: `./.pdcreator-cache/` in project directories
-   - All configuration stored as files on the filesystem (no database)
+### UI/UX Focus
+- Clean, intuitive command-line interface
+- Clear, informative error messages
+- Progress indicators for long-running operations
+- Colorful, well-formatted output
 
-### Integration with Existing Systems
+### Code Quality
+- Modular design with clear separation of concerns
+- Comprehensive error handling
+- Good test coverage
+- Clear documentation
+- Consistent code style
 
-1. **Workflow Structure**
-   - Analyzed existing workflow examples in codebase:
-     - `/workflows/p_PACdxn9/`
-     - `/sdf/workflows/p_MOCpBVn/`
-     - `/sdf/workflows/p_V9CAOQZ/`
-     - `/sdf/workflows/p_YyCObQy/`
-   - Follow the same structure for generated workflows
-   - Maintain compatibility with pdmanager expectations
+## Complete Usage Example
 
-2. **Tool Separation**
-   - pdcreator: Focus on workflow creation and testing
-   - pdmanager: Handles Pipedream initialization, updating, and configuration
-   - No direct calls between tools; file-based integration
+Below is a complete example of how a user would use the pdcreator tool for a typical workflow:
 
-### Testing Strategy
+### Step 0: Configure the Tool
+```bash
+$ pdcreator config setup
 
-1. **Component Testing**
-   - Implement custom testing framework that simulates Pipedream environment
-   - Create a local testing environment for components
-   - Generate test fixtures automatically based on component structure
+🔧 Setting up pdcreator configuration...
 
-2. **Development Target**
-   - Initial focus on internal use
-   - Prioritize functionality over extensive documentation initially
-   - Ensure robust error handling for primary functions
+Claude API Key: ****************************************
+GitHub API Token: ************************************
+Pipedream API Key: pd_***************************
+Pipedream Username: user@example.com
+Pipedream Password: ******************
 
-### Pipedream Component Structure Analysis
-
-Based on the analysis of existing Pipedream workflows and components, we've established the following patterns:
-
-#### Workflow.json Structure
-
-```json
-{
-  "id": "p_WORKFLOW_ID",
-  "name": "Workflow Name", 
-  "created_at": "2025-04-21T08:30:26.411Z",
-  "project_id": "proj_PROJECT_ID",
-  "description": "Optional description",
-  "trigger": {
-    "type": "http",
-    "path": "randomPathString"
-  },
-  "webhook_url": "https://pipedream.com/webhooks/p_ID/path"
-}
+🔐 Credentials stored securely in ~/.pdcreator/config.json
+✅ Configuration complete! pdcreator is ready to use
 ```
 
-For scheduled triggers:
-```json
-{
-  "trigger": {
-    "type": "schedule",
-    "schedule": "0 0 * * *"
-  }
-}
+### Step 1: Brainstorm a Workflow
+```bash
+$ pdcreator brainstorm "Monitor GitHub for new issues with 'bug' label and notify team in Slack with priority based on severity label"
+
+🧠 Connecting to Claude AI...
+🔍 Generating workflow design...
+
+Proposed Workflow: GitHub Bug Notifications to Slack
+=====================================================
+
+TRIGGER:
+- GitHub Webhook Trigger (When a new issue is created or updated)
+
+STEP 1: Filter Issues
+- Check if issue has "bug" label
+- Extract severity label (critical, high, medium, low)
+- Skip further processing if not a bug
+
+STEP 2: Format Slack Message
+- Create formatted message with issue title, author, description
+- Add priority indicator based on severity label
+- Include direct link to GitHub issue
+
+STEP 3: Send to Slack
+- Send formatted message to appropriate Slack channel
+- Add thread for discussion
+- Include reaction buttons for team acknowledgment
+
+Do you want to make any changes to this workflow design? (y/n): y
+
+What would you like to change?: Add a step to check if the bug is in a critical component
+
+🔄 Updating workflow design...
+
+[Updated workflow displayed with new step]
+
+Do you want to make any changes to this workflow design? (y/n): n
+
+💾 Saving workflow design to ./workflows/github-bugs-to-slack/design.md
+✅ Workflow design saved and ready for development!
 ```
 
-#### Component Structure (code.js)
+### Step 2: Develop the Workflow
+```bash
+$ pdcreator develop -w ./workflows/github-bugs-to-slack
 
-1. **Trigger (Source) Components:**
+🔌 Connecting to Pipedream...
+🔑 Authenticating with pdmanager...
+📝 Creating new project via pdmanager...
+✅ Project created with ID: proj_ABC123
 
-```javascript
-export default {
-  type: "source",
-  key: "http-webhook",
-  name: "HTTP Webhook",
-  description: "Receives HTTP requests and emits them as events",
-  version: "0.0.1",
-  props: {
-    http: "$.interface.http",
-  },
-  async run(event) {
-    // Process incoming webhook data
-    this.http.respond({
-      status: 200,
-      body: { success: true },
-    });
-    
-    // Emit event to workflow
-    this.$emit(event, {
-      summary: "New webhook request received",
-    });
-  },
-}
+📝 Registering workflow via pdmanager...
+✅ Workflow created with ID: p_XYZ789
+
+🏗️ Generating workflow structure...
+📂 Creating directory: ./workflows/p_XYZ789
+📄 Writing workflow.json...
+📄 Writing code.js...
+📄 Creating component files...
+📄 Generating test fixtures...
+
+✨ Workflow development complete!
 ```
 
-2. **Action Components:**
+### Step 3: Develop a Specific Component
+```bash
+$ pdcreator develop -w ./workflows/p_XYZ789 -s check-component-criticality --prompt "Check if bug affects core functionality"
 
-```javascript
-export default {
-  name: "Action Name",
-  key: "action_key",
-  version: "0.0.1",
-  type: "action",
-  description: "Performs a specific action",
-  props: {
-    // Input parameters
-    inputData: {
-      type: "string",
-      label: "Input Data",
-      description: "Data to process",
-    },
-  },
-  async run({ steps, $ }) {
-    // Access data from previous steps
-    const previousData = steps.trigger.event;
-    
-    // Perform action logic
-    const result = await someOperation(this.inputData);
-    
-    // Return data for next steps
-    return result;
-  },
-}
+🤖 Connecting to Claude AI...
+📝 Generating component code...
+🔄 Updating component in workflow...
+📄 Writing updated code to ./workflows/p_XYZ789/components/check-component-criticality.js
+📄 Updating workflow.json with new component reference...
+📄 Generating test fixtures for component...
+
+✅ Component successfully developed!
 ```
 
-3. **Data Flow Between Components:**
+### Step 4: Test Components
+```bash
+$ pdcreator test --path ./workflows/p_XYZ789/components/check-component-criticality
 
-- Components access previous step data via the `steps` object
-- Data is passed through in a structured JSON format
-- Different methods for returning data:
-  - Direct return values: `return { data: value }`
-  - Export named values: `$.export("name", value)`
-  - Event emission (triggers): `this.$emit(eventData, metadata)`
+🧪 Setting up test environment...
+📊 Loading test fixtures...
+🔄 Running component tests...
 
-### Implementation Priorities
+TEST RESULTS:
+✅ Test 1: Process bug in critical component - PASSED
+✅ Test 2: Process bug in non-critical component - PASSED
+✅ Test 3: Handle invalid input - PASSED
+❌ Test 4: Handle missing severity label - FAILED
+  Expected: Component should assign default 'medium' priority
+  Actual: Component returned null priority
 
-For the initial MVP, focus on these core capabilities:
+Would you like to fix this issue now? (y/n): y
 
-1. Brainstorming workflow structure with AI
-2. Creating workflow scaffolding with proper directory structure
-3. Generating working component implementations
-4. Basic testing capabilities
-5. Research functionality for app discovery
+🔧 Connecting to Claude AI for fix...
+🔄 Updating component code...
+🔄 Re-running tests...
 
-Later phases can add more advanced features like comprehensive testing, bug reporting, and workflow visualization.
+TEST RESULTS:
+✅ Test 1: Process bug in critical component - PASSED
+✅ Test 2: Process bug in non-critical component - PASSED
+✅ Test 3: Handle invalid input - PASSED
+✅ Test 4: Handle missing severity label - PASSED
 
-### Claude Prompt Templates
-
-To effectively generate components, we'll need to develop specialized prompt templates:
-
-1. **Brainstorming Template:**
-```
-Given the following workflow description: "{description}", 
-generate a complete Pipedream workflow design including:
-
-1. Appropriate trigger type (HTTP, schedule, or app-specific)
-2. Required action steps with proper sequence
-3. Data transformation requirements between steps
-4. Error handling considerations
-5. Expected inputs and outputs
-
-For each component, specify:
-- Component type (source/trigger or action)
-- Required properties and configuration
-- Data flow between components
-- Edge cases to handle
+✅ All component tests passed!
 ```
 
-2. **Component Generation Template:**
+### Step 5: Test Full Workflow
+```bash
+$ pdcreator test --path ./workflows/p_XYZ789
+
+🧪 Setting up workflow test environment...
+📊 Loading all components and test fixtures...
+🔄 Starting workflow execution...
+
+WORKFLOW EXECUTION:
+⏱️ Trigger: Simulating GitHub webhook event...
+✅ STEP 1 (Filter Issues): Issue has bug label, severity=high
+✅ STEP 2 (Check Component): Component is critical=true
+✅ STEP 3 (Format Message): Created message with HIGH PRIORITY flag
+✅ STEP 4 (Send to Slack): Message would be sent to #bugs channel
+
+DATA FLOW VALIDATION:
+✅ Trigger → Step 1: Data passed correctly
+✅ Step 1 → Step 2: Data passed correctly
+✅ Step 2 → Step 3: Data passed correctly
+✅ Step 3 → Step 4: Data passed correctly
+
+FINAL OUTPUT:
+✅ Workflow completed successfully
+✅ Expected notification delivered to mock Slack API
+✅ All data transformations validated
+
+✨ All tests passed! Workflow is ready for deployment.
 ```
-Generate a Pipedream {componentType} component that {componentPurpose}.
 
-Required fields:
-- name: "{componentName}"
-- key: "{componentKey}"
-- version: "0.0.1"
-- type: "{source|action}"
-
-The component should:
-{componentRequirements}
-
-Data handling:
-- Input data structure: {inputStructure}
-- Output data structure: {outputStructure}
-- Error handling: {errorHandling}
-
-Follow Pipedream best practices for component development.
-```
-
-These templates will be refined as we develop the tool and learn from real-world usage.
+This complete usage example demonstrates how all three commands (brainstorm, develop, and test) work together to create a functional workflow with proper Pipedream integration.
