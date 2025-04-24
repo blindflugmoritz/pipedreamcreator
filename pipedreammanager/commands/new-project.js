@@ -447,6 +447,9 @@ PROJECT_NAME=${projectName}
       if (urlMatch) {
         projectId = urlMatch[0];
         console.log(`Found project ID in URL: ${projectId}`);
+        
+        // Store projectId as a global variable for output at the end
+        global.extractedProjectId = projectId;
       } else {
         // Try to navigate to settings to get the ID
         console.log('Project ID not found in URL, trying settings page...');
@@ -475,16 +478,21 @@ PROJECT_NAME=${projectName}
           if (settingsMatch) {
             projectId = settingsMatch[0];
             console.log(`Found project ID in settings URL: ${projectId}`);
+            // Also store in global variable for output at the end
+            global.extractedProjectId = projectId;
           }
         }
       }
       
       // Create config files with project information
-      if (projectId) {
+      // Use either the local projectId or the global one
+      const finalProjectId = projectId || global.extractedProjectId;
+      
+      if (finalProjectId) {
         // Create config.ini file
         const configContent = `[project]
 name = ${projectName}
-id = ${projectId}
+id = ${finalProjectId}
 created_at = ${new Date().toISOString()}
 
 [pipedream]
@@ -494,11 +502,11 @@ apikey = ${apiKey}
         await fs.writeFile(path.join(projectDir, 'config.ini'), configContent);
         
         // Update .env file with project ID
-        const updatedEnvContent = `${envContent}PROJECT_ID=${projectId}
+        const updatedEnvContent = `${envContent}PROJECT_ID=${finalProjectId}
 `;
         await fs.writeFile(path.join(projectDir, '.env'), updatedEnvContent);
         
-        console.log(`Project created with ID: ${projectId}`);
+        console.log(`Project created with ID: ${finalProjectId}`);
         
         // Create workflows directory
         const workflowsDir = path.join(projectDir, 'workflows');
@@ -516,9 +524,10 @@ apikey = ${apiKey}
     
     console.log(`\nProject setup complete!`);
     console.log(`PROJECT_PATH=${projectDir}`);
-    // Use the extracted projectId variable, which might be null
-    if (typeof projectId !== 'undefined' && projectId) {
-      console.log(`PROJECT_ID=${projectId}`);
+    
+    // Use the global.extractedProjectId which should persist through the function
+    if (global.extractedProjectId) {
+      console.log(`PROJECT_ID=${global.extractedProjectId}`);
     } else {
       console.log(`WARNING: Could not extract project ID`);
     }
