@@ -133,7 +133,10 @@ class PdManagerClient {
 
   // Create a new workflow in Pipedream
   async createWorkflow(workflowName, projectId = null) {
-    const args = [workflowName];
+    const args = [];
+    // Name should be provided as an option, not a positional argument
+    args.push('--name', workflowName);
+    
     if (projectId) {
       args.push('--project', projectId);
     }
