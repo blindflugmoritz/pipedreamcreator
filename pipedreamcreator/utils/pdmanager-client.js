@@ -151,11 +151,24 @@ class PdManagerClient {
       const result = await this.executeCommand('create-workflow', args);
       
       // Extract workflow ID from the output
-      const match = result.match(/Workflow created with ID: ([a-zA-Z0-9_]+)/);
+      // The create-workflow command outputs the ID in this format: "✅ Workflow created successfully with ID: p_abc123"
+      const match = result.match(/Workflow created successfully with ID: ([a-zA-Z0-9_]+)/);
+      
       if (match && match[1]) {
         return match[1]; // Return the workflow ID
-      } else {
-        throw new Error('Could not parse workflow ID from pdmanager output');
+      } 
+      
+      // Alternative format: "Workflow ID: p_abc123"
+      const altMatch = result.match(/Workflow ID: ([a-zA-Z0-9_]+)/);
+      if (altMatch && altMatch[1]) {
+        return altMatch[1];
+      }
+      
+      // If we can't find the workflow ID, log the entire result for debugging
+      console.log(chalk.yellow('Debug - raw output from create-workflow:'));
+      console.log(result);
+      
+      throw new Error('Could not parse workflow ID from pdmanager output');
       }
     } catch (error) {
       console.error(chalk.red('Error creating workflow:'), error.message);
