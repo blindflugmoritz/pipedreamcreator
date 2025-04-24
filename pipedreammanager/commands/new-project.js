@@ -19,31 +19,47 @@ async function newProject(options) {
   try {
     // Gather project information - first try command-line options, then environment vars, then prompt
     
+    // Determine if we're running in non-interactive mode
+    const isNonInteractive = options.nonInteractive || 
+                            (options.name && options.username && options.password);
+    
     // Get project name (required)
     let projectName = options.name || process.env.PROJECT_NAME;
     if (!projectName) {
+      if (isNonInteractive) {
+        throw new Error('Project name is required in non-interactive mode');
+      }
       projectName = await question('Project name: ');
     }
     
     // Get project path (optional - default is current directory)
     const defaultPath = process.cwd();
-    const projectPath = process.env.PROJECT_PATH || await question(`Project path (default: ${defaultPath}): `) || defaultPath;
+    let projectPath = options.path || process.env.PROJECT_PATH;
+                            
+    if (!projectPath && !isNonInteractive) {
+      projectPath = await question(`Project path (default: ${defaultPath}): `);
+    }
+    projectPath = projectPath || defaultPath;
     
     // Get credentials (required)
     let username = options.username || process.env.PIPEDREAM_USERNAME;
     if (!username) {
+      if (isNonInteractive) {
+        throw new Error('Username is required in non-interactive mode');
+      }
       username = await question('Pipedream username: ');
     }
     
     let password = options.password || process.env.PIPEDREAM_PASSWORD;
     if (!password) {
+      if (isNonInteractive) {
+        throw new Error('Password is required in non-interactive mode');
+      }
       password = await question('Pipedream password: ');
     }
     
-    let apiKey = options.apiKey || process.env.PIPEDREAM_API_KEY;
-    if (!apiKey && !options.noApiKey) {
-      apiKey = await question('Pipedream API key (optional): ');
-    }
+    // API key is entirely optional, even in non-interactive mode
+    let apiKey = options.apiKey || process.env.PIPEDREAM_API_KEY || '';
     
     // Create project directory if it doesn't exist
     const projectDir = path.join(projectPath, projectName);
@@ -500,7 +516,8 @@ apikey = ${apiKey}
     
     console.log(`\nProject setup complete!`);
     console.log(`PROJECT_PATH=${projectDir}`);
-    if (projectId) {
+    // Use the extracted projectId variable, which might be null
+    if (typeof projectId !== 'undefined' && projectId) {
       console.log(`PROJECT_ID=${projectId}`);
     } else {
       console.log(`WARNING: Could not extract project ID`);

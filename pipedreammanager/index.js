@@ -35,6 +35,8 @@ program
   .option('-u, --username <username>', 'Pipedream username/email')
   .option('-p, --password <password>', 'Pipedream password')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional)')
+  .option('--path <path>', 'Project directory path (default: current directory)')
+  .option('--non-interactive', 'Skip all interactive prompts')
   .action(newProject);
 
 program
