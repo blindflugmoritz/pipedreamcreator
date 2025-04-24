@@ -54,30 +54,33 @@ class PdManagerClient {
         throw new Error('Pipedream username and password not configured. Run "pdcreator config setup"');
       }
       
-      // Export environment variables for new-project command
-      process.env.PROJECT_NAME = projectName;
-      process.env.PIPEDREAM_USERNAME = username;
-      process.env.PIPEDREAM_PASSWORD = password;
+      // Use command-line arguments instead of environment variables
+      const args = [
+        '--name', projectName,
+        '--username', username,
+        '--password', password
+      ];
+      
       if (apiKey) {
-        process.env.PIPEDREAM_API_KEY = apiKey;
+        args.push('--apiKey', apiKey);
       }
       
       try {
-        // Use new-project command which works interactively with environment variables
-        const result = await this.executeCommand('new-project');
-        
-        // Clean up environment variables
-        delete process.env.PROJECT_NAME;
-        delete process.env.PIPEDREAM_USERNAME;
-        delete process.env.PIPEDREAM_PASSWORD;
-        delete process.env.PIPEDREAM_API_KEY;
+        // Use the updated new-project command with command-line arguments
+        const result = await this.executeCommand('new-project', args);
         
         // Detect failure patterns
         if (result.includes('Project creation failed')) {
           throw new Error('Project creation failed');
         }
         
-        // Try to find project ID in the output
+        // Look for the project ID in the new standardized output format
+        const projectIdLine = result.split('\n').find(line => line.startsWith('PROJECT_ID='));
+        if (projectIdLine) {
+          return projectIdLine.replace('PROJECT_ID=', '').trim();
+        }
+        
+        // Fallback: Try to find project ID in the regular output
         const projectIdMatch = result.match(/Project\s+ID:\s+([a-zA-Z0-9_]+)/i) || 
                               result.match(/proj_[a-zA-Z0-9]+/);
         
@@ -87,15 +90,17 @@ class PdManagerClient {
           return projectIdMatch[0]; // Return the matched pattern if no capture group
         } else {
           // Look for a directory path that might contain the new project
-          const dirMatch = result.match(/Project directory:\s+(.+)/i);
-          if (dirMatch && dirMatch[1]) {
+          const projectPathLine = result.split('\n').find(line => line.startsWith('PROJECT_PATH='));
+          const dirPath = projectPathLine ? projectPathLine.replace('PROJECT_PATH=', '').trim() : null;
+          
+          if (dirPath) {
             // Try to read config.ini from that directory
             try {
               const fs = require('fs-extra');
               const ini = require('ini');
               const path = require('path');
               
-              const configPath = path.join(dirMatch[1], 'config.ini');
+              const configPath = path.join(dirPath, 'config.ini');
               if (fs.existsSync(configPath)) {
                 const config = ini.parse(fs.readFileSync(configPath, 'utf-8'));
                 if (config.project && config.project.id) {
@@ -113,20 +118,8 @@ class PdManagerClient {
           return placeholderId;
         }
       } catch (e) {
-        // Try the older create-project command as a fallback
-        console.log(chalk.yellow(`Error with new-project command: ${e.message}`));
-        console.log(chalk.yellow('Trying fallback create-project command...'));
-        
-        const result = await this.executeCommand('create-project', ['--name', projectName, '--username', username, '--password', password]);
-        
-        const projectIdMatch = result.match(/Project\s+ID:\s+([a-zA-Z0-9_]+)/i) || 
-                             result.match(/proj_[a-zA-Z0-9]+/);
-        
-        if (projectIdMatch) {
-          return projectIdMatch[1] || projectIdMatch[0];
-        } else {
-          throw new Error('All project creation methods failed');
-        }
+        console.error(chalk.red('Error creating project with new-project command:'), e.message);
+        throw new Error(`Failed to create project: ${e.message}`);
       }
     } catch (error) {
       console.error(chalk.red('Error creating project:'), error.message);
