@@ -23,7 +23,7 @@ const setup = async () => {
       name: 'pipedream.api_key',
       message: 'Pipedream API Key:',
       type: 'password',
-      validate: input => input.startsWith('pd_') ? true : 'Pipedream API keys typically start with "pd_"'
+      validate: input => input.length > 0 ? true : 'API key is required'
     },
     {
       name: 'pipedream.username',

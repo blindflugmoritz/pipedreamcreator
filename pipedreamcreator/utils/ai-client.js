@@ -125,7 +125,7 @@ Follow Pipedream best practices for trigger development.
   async callClaude(prompt, options = {}) {
     const client = this._initClient();
     const defaultOptions = {
-      model: 'claude-3-sonnet-20240229',
+      model: 'claude-3-opus-20240229',
       max_tokens: 4000,
       temperature: 0.7,
       retries: 3,
