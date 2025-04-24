@@ -34,6 +34,11 @@ The pdmanager tool has become overly complex with too many commands and options.
 4. **open**
    - Opens a Pipedream project in the browser
 
+5. **deploy**
+   - Deploys a local workflow to Pipedream
+   - Updates code and configurations via API
+   - Validates app connections and requirements
+
 ## Commands to Remove
 - create-project (redundant with new-project)
 - create-project.sh (shell script not needed)
@@ -50,6 +55,21 @@ The simplified new-project command should:
 - Handle login with resilience to Pipedream UI changes
 - Create the project files with proper configuration
 - Provide clear success/failure output with project ID
+
+### create-workflow Command
+- Create workflows via API when possible
+- Fall back to browser automation only when necessary
+- Support different trigger types (HTTP, schedule, etc.)
+- Generate local workflow files with correct structure
+
+### deploy Command
+The deploy command will:
+- Update workflow metadata via API
+- Push code changes to the Pipedream platform
+- Validate workflow configuration before deployment
+- Detect required app connections and provide guidance
+- Support dry-run mode to validate without deploying
+- Report deployment status and provide workflow URL
 
 ### Puppeteer Implementation
 - Keep browser automation simple but robust
@@ -74,6 +94,9 @@ pdmanager new-project --username user@example.com --password password --name "My
 
 # Create a workflow in a project
 pdmanager create-workflow --project proj_abc123 --name "My Workflow" --trigger http
+
+# Deploy workflow changes to Pipedream
+pdmanager deploy --workflow p_abc123 --apiKey YOUR_API_KEY
 ```
 
 ## Development Roadmap
@@ -104,8 +127,9 @@ pdmanager create-workflow --project proj_abc123 --name "My Workflow" --trigger h
 
 ### Next Steps
 1. Fix API endpoints for list-workflows and list-triggers commands
-2. Further improve error handling and recovery mechanisms
-3. Update documentation to reflect the simplified command set
+2. Implement deploy command for workflow updates via API
+3. Further improve error handling and recovery mechanisms
+4. Update documentation to reflect the simplified command set
 
 ### Conclusion
 The pdmanager tool is now significantly simpler and more maintainable. Core functionality (project and workflow creation) works well, making it ready for use with pdcreator for these functions. API listing functionality needs further work before it can be fully reliable.
