@@ -168,7 +168,7 @@ const generateWorkflowFiles = async (workflowDir, workflowId, projectId, workflo
     
     // Call Claude to generate the files
     const response = await aiClient.callClaude(prompt, {
-      max_tokens: 8000,
+      max_tokens: 4000,
       temperature: 0.2
     });
     
@@ -376,7 +376,7 @@ const updateEntireWorkflow = async (workflowPath, workflowJson, additionalPrompt
     
     // Call Claude to generate the updated files
     const response = await aiClient.callClaude(prompt, {
-      max_tokens: 8000,
+      max_tokens: 4000,
       temperature: 0.2
     });
     
