@@ -58,12 +58,16 @@ class PdManagerClient {
       const args = [
         '--name', projectName,
         '--username', username,
-        '--password', password
+        '--password', password,
+        '--non-interactive'
       ];
       
       if (apiKey) {
         args.push('--apiKey', apiKey);
       }
+      
+      // Add path to store project in current directory
+      args.push('--path', process.cwd());
       
       try {
         // Use the updated new-project command with command-line arguments
