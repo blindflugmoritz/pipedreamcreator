@@ -15,15 +15,35 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function newProject() {
+async function newProject(options) {
   try {
-    // Gather project information
-    const projectName = await question('Project name: ');
+    // Gather project information - first try command-line options, then environment vars, then prompt
+    
+    // Get project name (required)
+    let projectName = options.name || process.env.PROJECT_NAME;
+    if (!projectName) {
+      projectName = await question('Project name: ');
+    }
+    
+    // Get project path (optional - default is current directory)
     const defaultPath = process.cwd();
-    const projectPath = await question(`Project path (default: ${defaultPath}): `) || defaultPath;
-    const username = await question('Pipedream username: ');
-    const password = await question('Pipedream password: ');
-    const apiKey = await question('Pipedream API key: ');
+    const projectPath = process.env.PROJECT_PATH || await question(`Project path (default: ${defaultPath}): `) || defaultPath;
+    
+    // Get credentials (required)
+    let username = options.username || process.env.PIPEDREAM_USERNAME;
+    if (!username) {
+      username = await question('Pipedream username: ');
+    }
+    
+    let password = options.password || process.env.PIPEDREAM_PASSWORD;
+    if (!password) {
+      password = await question('Pipedream password: ');
+    }
+    
+    let apiKey = options.apiKey || process.env.PIPEDREAM_API_KEY;
+    if (!apiKey && !options.noApiKey) {
+      apiKey = await question('Pipedream API key (optional): ');
+    }
     
     // Create project directory if it doesn't exist
     const projectDir = path.join(projectPath, projectName);
@@ -478,7 +498,13 @@ apikey = ${apiKey}
       rl.close();
     }
     
-    console.log(`\nProject setup complete! Your project is available at ${projectDir}`);
+    console.log(`\nProject setup complete!`);
+    console.log(`PROJECT_PATH=${projectDir}`);
+    if (projectId) {
+      console.log(`PROJECT_ID=${projectId}`);
+    } else {
+      console.log(`WARNING: Could not extract project ID`);
+    }
     
   } catch (error) {
     console.error('Error creating project:', error.message);

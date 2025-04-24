@@ -31,6 +31,10 @@ program
 program
   .command('new-project')
   .description('Create a new Pipedream project')
+  .option('-n, --name <name>', 'Project name')
+  .option('-u, --username <username>', 'Pipedream username/email')
+  .option('-p, --password <password>', 'Pipedream password')
+  .option('-k, --apiKey <key>', 'Pipedream API key (optional)')
   .action(newProject);
 
 program
