@@ -80,8 +80,8 @@ program
 
 program
   .command('download')
-  .description('Download a Pipedream project or workflow')
-  .argument('<url-or-id>', 'Pipedream URL or resource ID to download')
+  .description('Download a Pipedream workflow')
+  .argument('<workflow-id>', 'Workflow ID (p_XXXXX)')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
   .option('-o, --outputDir <dir>', 'Output directory (default: current directory)')
   .action(download);
