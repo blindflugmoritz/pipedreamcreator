@@ -42,43 +42,27 @@ async function listWorkflows(options) {
       process.exit(1);
     }
     
+    // Get organization ID for scoped API requests
+    let orgId = null;
+    try {
+      const userDetails = await apiClient.getUserDetails();
+      if (userDetails?.data?.orgs && userDetails.data.orgs.length > 0) {
+        orgId = userDetails.data.orgs[0].id;
+        console.log(`Using organization ID: ${orgId}`);
+      }
+    } catch (error) {
+      console.error('Warning: Could not determine organization ID:', error.message);
+    }
+    
     // Get workflows for the project
     console.log(`Fetching workflows for project: ${projectId}`);
     
     let workflows;
     try {
-      workflows = await apiClient.getProjectWorkflows(projectId);
+      workflows = await apiClient.getProjectWorkflows(projectId, orgId);
     } catch (error) {
       console.error(`Failed to fetch workflows: ${error.message}`);
-      
-      // Try to get all workflows and filter manually
-      try {
-        console.log('Attempting to fetch all workflows and filter by project...');
-        const allWorkflows = await apiClient.makeRequest('GET', '/users/me/workflows');
-        
-        if (allWorkflows && allWorkflows.data) {
-          // Filter for this project
-          const filteredWorkflows = {
-            data: allWorkflows.data.filter(workflow => 
-              workflow.project_id === projectId || 
-              workflow.project?.id === projectId ||
-              workflow.settings?.project_id === projectId ||
-              workflow.settings?.projectId === projectId
-            )
-          };
-          
-          if (filteredWorkflows.data.length > 0) {
-            console.log(`Found ${filteredWorkflows.data.length} workflows for project from all user workflows`);
-            workflows = filteredWorkflows;
-          } else {
-            console.error('No workflows found for this project ID in user workflows');
-            process.exit(1);
-          }
-        }
-      } catch (fallbackError) {
-        console.error(`Fallback method failed: ${fallbackError.message}`);
-        process.exit(1);
-      }
+      process.exit(1);
     }
     
     if (!workflows || !workflows.data) {
@@ -108,7 +92,6 @@ async function listWorkflows(options) {
     
     console.log('-'.repeat(80));
     console.log(`Total workflows: ${workflows.data.length}`);
-    
   } catch (error) {
     console.error('Error listing workflows:', error.message);
     process.exit(1);
