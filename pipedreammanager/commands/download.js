@@ -49,41 +49,19 @@ function makeApiRequest(workflowId, apiKey, orgId) {
   });
 }
 
-// Also get workflow code with similar direct approach
-function getWorkflowCode(workflowId, apiKey, orgId) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.pipedream.com',
-      port: 443, 
-      path: `/v1/workflows/${workflowId}/code?org_id=${orgId}`,
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+// Also get workflow code - using the steps instead since there's no separate code endpoint
+async function extractCodeFromWorkflow(workflow) {
+  // The code is typically in the steps array, in a CodeCell component
+  if (workflow && workflow.steps) {
+    for (const step of workflow.steps) {
+      if (step.type === 'CodeCell' && step.savedComponent && step.savedComponent.code) {
+        return step.savedComponent.code;
       }
-    };
-    
-    console.log(`Making API request: GET https://api.pipedream.com${options.path}`);
-    
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode === 200) {
-          resolve(JSON.parse(data));
-        } else {
-          console.error(`API request failed with status ${res.statusCode}: ${data}`);
-          reject(`Failed with status ${res.statusCode}: ${data}`);
-        }
-      });
-    });
-    
-    req.on('error', (e) => {
-      console.error(`Request error: ${e.message}`);
-      reject(e);
-    });
-    req.end();
-  });
+    }
+  }
+  
+  // Default code if none found
+  return `// No code found for this workflow\n// Created: ${new Date().toISOString()}\n`;
 }
 
 // Simple function to download a workflow - does exactly what's needed, no more
@@ -98,21 +76,27 @@ async function download(workflowId, options = {}) {
       process.exit(1);
     }
     
-    // Use hard-coded org ID that we know works
-    const orgId = "o_xeIro4n";
-    console.log(`Using organization ID: ${orgId}`);
+    // Try both org IDs
+    const orgIds = ["o_xeIro4n", "o_PwIjJKm"];
+    let workflow = null;
     
-    // Get workflow details with direct API call
-    const workflow = await makeApiRequest(workflowId, apiKey, orgId);
-    
-    // Get workflow code
-    let workflowCode;
-    try {
-      workflowCode = await getWorkflowCode(workflowId, apiKey, orgId);
-    } catch (error) {
-      console.warn(`Could not fetch workflow code: ${error}`);
-      workflowCode = { data: { code: `// Placeholder for workflow: ${workflowId}\n// Code could not be fetched\n` } };
+    for (const orgId of orgIds) {
+      try {
+        console.log(`Trying with organization ID: ${orgId}`);
+        workflow = await makeApiRequest(workflowId, apiKey, orgId);
+        console.log(`Success with organization ID: ${orgId}`);
+        break; // Exit the loop if successful
+      } catch (error) {
+        console.log(`Failed with organization ID ${orgId}: ${error}`);
+      }
     }
+    
+    if (!workflow) {
+      throw new Error(`Could not fetch workflow with any organization ID`);
+    }
+    
+    // Extract code from the workflow data (instead of making a separate API call)
+    const code = await extractCodeFromWorkflow(workflow);
     
     // Create output directory
     const outputDir = options.outputDir || process.cwd();
@@ -122,28 +106,25 @@ async function download(workflowId, options = {}) {
     await ensureDir(workflowsDir);
     await ensureDir(workflowDir);
     
+    // Determine the workflow name from the triggers or steps
+    let workflowName = `Workflow_${workflowId}`;
+    if (workflow.name) {
+      workflowName = workflow.name;
+    }
+    
     // Save workflow details
     const metadata = {
       id: workflowId,
-      name: workflow.data.name || 'Unnamed Workflow',
-      description: workflow.data.description || '',
-      created_at: workflow.data.created_at || new Date().toISOString(),
-      project_id: workflow.data.project_id || ''
+      name: workflowName,
+      created_at: new Date().toISOString()
     };
     
     // Extract trigger information if available
-    const components = workflow.data.components || [];
-    const trigger = components.find(c => c.key === 'trigger');
-    
-    if (trigger) {
-      if (trigger.app === 'http') {
+    if (workflow.triggers && workflow.triggers.length > 0) {
+      const trigger = workflow.triggers[0];
+      if (trigger.endpoint_url) {
         metadata.trigger = { type: 'http' };
-        metadata.webhook_url = `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
-      } else if (trigger.app === 'schedule' && trigger.source?.cron) {
-        metadata.trigger = { 
-          type: 'schedule',
-          schedule: trigger.source.cron
-        };
+        metadata.webhook_url = trigger.endpoint_url;
       }
     }
     
@@ -155,10 +136,10 @@ async function download(workflowId, options = {}) {
     
     await fs.writeFile(
       path.join(workflowDir, 'code.js'),
-      workflowCode.data.code || '// Empty workflow code'
+      code
     );
     
-    console.log(`✅ Successfully downloaded workflow: ${metadata.name} (${workflowId})`);
+    console.log(`✅ Successfully downloaded workflow: ${workflowName} (${workflowId})`);
     console.log(`   - Saved to: ${workflowDir}`);
     
     return metadata;
