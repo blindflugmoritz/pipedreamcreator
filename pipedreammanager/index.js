@@ -81,10 +81,11 @@ program
 
 program
   .command('download')
-  .description('Download a Pipedream workflow')
-  .argument('<id-or-url>', 'Workflow ID (p_XXXXX) or a Pipedream URL')
+  .description('Download a Pipedream workflow or project')
+  .argument('<id-or-url>', 'Workflow ID (p_XXXXX), project ID (proj_XXXXX), or a Pipedream URL')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
   .option('-o, --outputDir <dir>', 'Output directory (default: current directory)')
+  .option('-v, --verbose', 'Show verbose output during download')
   .action(download);
 
 program.parse(process.argv);
