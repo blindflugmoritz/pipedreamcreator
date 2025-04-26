@@ -8,6 +8,7 @@ const { createWorkflow } = require('./commands/create-workflow');
 const { listTriggers } = require('./commands/list-triggers');
 const { listSteps } = require('./commands/list-steps');
 const { listWorkflows } = require('./commands/list-workflows');
+const { download } = require('./commands/download');
 
 program
   .version('1.0.0')
@@ -76,5 +77,13 @@ program
   .option('-p, --project <id>', 'Project ID (optional if in project directory)')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
   .action(listWorkflows);
+
+program
+  .command('download')
+  .description('Download a Pipedream project or workflow')
+  .argument('<url-or-id>', 'Pipedream URL or resource ID to download')
+  .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
+  .option('-o, --outputDir <dir>', 'Output directory (default: current directory)')
+  .action(download);
 
 program.parse(process.argv);

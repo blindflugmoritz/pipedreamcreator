@@ -1,55 +1,8 @@
-const https = require('https');
-require('dotenv').config();
 const fs = require('fs').promises;
 const path = require('path');
 const ini = require('ini');
-
-// Helper function to make API requests
-async function makeApiRequest(method, endpoint, apiKey, data = null) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.pipedream.com',
-      port: 443,
-      path: `/v1${endpoint}`,
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      let responseData = '';
-      
-      res.on('data', (chunk) => {
-        responseData += chunk;
-      });
-      
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const parsedData = JSON.parse(responseData);
-            resolve(parsedData);
-          } catch (error) {
-            reject(new Error(`Failed to parse response: ${error.message}`));
-          }
-        } else {
-          reject(new Error(`Request failed with status code ${res.statusCode}: ${responseData}`));
-        }
-      });
-    });
-    
-    req.on('error', (error) => {
-      reject(error);
-    });
-    
-    if (data) {
-      req.write(JSON.stringify(data));
-    }
-    
-    req.end();
-  });
-}
+require('dotenv').config();
+const PipedreamApiClient = require('../utils/api-client');
 
 // Get project ID from config.ini
 async function getProjectIdFromConfig() {
@@ -88,11 +41,18 @@ async function getWorkflowIdFromLocal() {
     
     if (parentDir === 'workflows') {
       const workflowJsonPath = path.join(currentDir, 'workflow.json');
-      const workflowData = JSON.parse(await fs.readFile(workflowJsonPath, 'utf8'));
-      if (workflowData && workflowData.id) {
-        return workflowData.id;
-      } else {
-        return dirName; // Assume the directory name is the workflow ID
+      try {
+        const workflowData = JSON.parse(await fs.readFile(workflowJsonPath, 'utf8'));
+        if (workflowData && workflowData.id) {
+          return workflowData.id;
+        } 
+      } catch (e) {
+        // workflow.json might not exist or be readable
+      }
+      
+      // Assume the directory name is the workflow ID if it starts with p_
+      if (dirName.startsWith('p_')) {
+        return dirName;
       }
     }
   } catch (error) {
@@ -160,6 +120,9 @@ async function listSteps(options) {
       process.exit(1);
     }
     
+    // Initialize API client
+    const apiClient = new PipedreamApiClient(apiKey);
+    
     // Get workflow ID
     let workflowId = options.workflow;
     
@@ -167,58 +130,29 @@ async function listSteps(options) {
     if (!workflowId) {
       workflowId = await getWorkflowIdFromLocal();
       
-      // Get user details to find org ID before listing workflows
-      let orgId = null;
-      try {
-        const userDetails = await makeApiRequest('GET', '/users/me', apiKey);
+      // If still no workflow ID and project ID provided, list all workflows
+      if (!workflowId) {
+        // Get user details
+        const userDetails = await apiClient.getUserDetails();
         
-        if (userDetails && userDetails.data && userDetails.data.orgs && userDetails.data.orgs.length > 0) {
-          orgId = userDetails.data.orgs[0].id;
-          console.log(`Using workspace (org_id): ${orgId}`);
-        } else {
-          console.error('Error: No workspace found for the user');
-          process.exit(1);
+        // Get project ID from options or config
+        let projectId = options.project;
+        if (!projectId) {
+          projectId = await getProjectIdFromConfig();
         }
-      } catch (error) {
-        console.error(`Error getting user details: ${error.message}`);
-        process.exit(1);
-      }
-      
-      // If still no workflow ID and project ID provided, list all workflows and prompt user
-      if (!workflowId && options.project) {
-        console.log(`No workflow ID provided. Listing workflows in project ${options.project}...`);
-        try {
-          const workflows = await makeApiRequest('GET', `/projects/${options.project}/workflows?org_id=${orgId}`, apiKey);
-          
-          if (workflows && workflows.data && workflows.data.length > 0) {
-            console.log('\nAvailable workflows:');
-            workflows.data.forEach((workflow, index) => {
-              console.log(`${index + 1}. ${workflow.name} (${workflow.id})`);
-            });
-            
-            console.log('\nPlease use --workflow <id> to specify which workflow to retrieve steps for.');
-            return;
-          } else {
-            console.log('No workflows found in the project.');
-            return;
-          }
-        } catch (error) {
-          console.error(`Error fetching workflows: ${error.message}`);
-          return;
-        }
-      } else if (!workflowId && !options.project) {
-        // Try to get project ID from config.ini
-        const projectId = await getProjectIdFromConfig();
         
         if (projectId) {
           console.log(`No workflow ID provided. Listing workflows in project ${projectId}...`);
+          
           try {
-            const workflows = await makeApiRequest('GET', `/projects/${projectId}/workflows?org_id=${orgId}`, apiKey);
+            // Get project workflows
+            const workflows = await apiClient.getProjectWorkflows(projectId);
             
             if (workflows && workflows.data && workflows.data.length > 0) {
               console.log('\nAvailable workflows:');
               workflows.data.forEach((workflow, index) => {
-                console.log(`${index + 1}. ${workflow.name} (${workflow.id})`);
+                const name = workflow.name || workflow.settings?.name || 'Unnamed Workflow';
+                console.log(`${index + 1}. ${name} (${workflow.id})`);
               });
               
               console.log('\nPlease use --workflow <id> to specify which workflow to retrieve steps for.');
@@ -243,46 +177,48 @@ async function listSteps(options) {
       process.exit(1);
     }
     
-    // Get user details to find org ID
-    console.log('Fetching user details to determine workspace...');
-    let orgId = null;
-    try {
-      const userDetails = await makeApiRequest('GET', '/users/me', apiKey);
-      
-      if (!userDetails || !userDetails.data || !userDetails.data.id) {
-        console.error('Error: Failed to fetch user details');
-        process.exit(1);
-      }
-      
-      // Get the first organization (workspace) from the user's details
-      if (userDetails.data.orgs && userDetails.data.orgs.length > 0) {
-        orgId = userDetails.data.orgs[0].id;
-        console.log(`Using workspace (org_id): ${orgId}`);
-      } else {
-        console.error('Error: No workspace found for the user');
-        process.exit(1);
-      }
-    } catch (error) {
-      console.error(`Error getting user details: ${error.message}`);
-      process.exit(1);
-    }
-    
     // Fetch workflow details
     console.log(`Fetching details for workflow ${workflowId}...`);
-    const workflow = await makeApiRequest('GET', `/workflows/${workflowId}?org_id=${orgId}`, apiKey);
+    
+    let workflow;
+    try {
+      workflow = await apiClient.getWorkflow(workflowId);
+    } catch (error) {
+      console.error(`Error fetching workflow: ${error.message}`);
+      process.exit(1);
+    }
     
     if (!workflow || !workflow.data) {
       console.error('Error: Failed to fetch workflow details');
       process.exit(1);
     }
     
-    const workflowName = workflow.data.name || 'Unnamed Workflow';
+    const workflowName = workflow.data.name || workflow.data.settings?.name || 'Unnamed Workflow';
     const workflowUrl = `https://pipedream.com/workflows/${workflowId}`;
     console.log(`\nWorkflow: ${workflowName} (${workflowId})`);
     console.log(`URL: ${workflowUrl}`);
     
-    // Extract components/steps
-    const components = workflow.data.components || [];
+    // Try to get steps directly
+    let components = [];
+    
+    try {
+      // First try to get steps directly via API
+      const steps = await apiClient.getWorkflowSteps(workflowId);
+      
+      if (steps && steps.data) {
+        components = steps.data;
+      } else if (workflow.data.components) {
+        // If direct API fails, use components from workflow data
+        components = workflow.data.components;
+      }
+    } catch (stepsError) {
+      console.log(`Note: Could not fetch steps directly: ${stepsError.message}`);
+      
+      // Fall back to components from workflow
+      if (workflow.data.components) {
+        components = workflow.data.components;
+      }
+    }
     
     if (components.length === 0) {
       console.log('\nNo steps found for this workflow.');

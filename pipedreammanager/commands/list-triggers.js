@@ -1,66 +1,8 @@
-const https = require('https');
-const dotenv = require('dotenv');
 const fs = require('fs').promises;
 const path = require('path');
 const ini = require('ini');
-
-// Explicitly configure dotenv to look in the right place
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-
-// Helper function to make API requests
-async function makeApiRequest(method, endpoint, apiKey, data = null) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.pipedream.com',
-      port: 443,
-      path: `/v1${endpoint}`,
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    // Log the API call for debugging
-    console.log(`API Call: ${method} https://api.pipedream.com/v1${endpoint}`);
-    
-    const req = https.request(options, (res) => {
-      let responseData = '';
-      
-      res.on('data', (chunk) => {
-        responseData += chunk;
-      });
-      
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const parsedData = JSON.parse(responseData);
-            console.log(`API Response (${res.statusCode}): Success`);
-            resolve(parsedData);
-          } catch (error) {
-            console.log(`API Response (${res.statusCode}): Error parsing JSON`);
-            reject(new Error(`Failed to parse response: ${error.message}`));
-          }
-        } else {
-          console.log(`API Response (${res.statusCode}): ${responseData}`);
-          reject(new Error(`Request failed with status code ${res.statusCode}: ${responseData}`));
-        }
-      });
-    });
-    
-    req.on('error', (error) => {
-      console.log(`API Network Error: ${error.message}`);
-      reject(error);
-    });
-    
-    if (data) {
-      req.write(JSON.stringify(data));
-      console.log(`Request Body: ${JSON.stringify(data)}`);
-    }
-    
-    req.end();
-  });
-}
+require('dotenv').config();
+const PipedreamApiClient = require('../utils/api-client');
 
 // Get project ID from config.ini
 async function getProjectIdFromConfig() {
@@ -110,10 +52,13 @@ async function listTriggers(options) {
       process.exit(1);
     }
     
+    // Initialize API client
+    const apiClient = new PipedreamApiClient(apiKey);
+    
     // Get workflow ID
     let workflowId = options.workflow;
     
-    // If workflow ID not provided directly, try to read from local directory or options
+    // If workflow ID not provided directly, try to read from local directory
     if (!workflowId) {
       // Check if we're in a workflow directory by looking for workflow.json
       try {
@@ -138,40 +83,38 @@ async function listTriggers(options) {
         const currentDir = process.cwd();
         const dirName = path.basename(currentDir);
         
-        // Check if the directory name matches a workflow ID pattern (may be specific to your naming)
-        if (dirName.startsWith('wf_') || dirName.match(/^[a-zA-Z0-9_-]+$/)) {
+        // Check if the directory name matches a workflow ID pattern
+        if (dirName.startsWith('p_') || dirName.match(/^[a-zA-Z0-9_-]+$/)) {
           console.log(`Trying to use directory name as workflow ID: ${dirName}`);
           workflowId = dirName;
         }
       }
+    }
+    
+    // If still no workflow ID, try to list workflows in the project
+    if (!workflowId) {
+      // Get user details
+      console.log('Fetching user details...');
+      const userDetails = await apiClient.getUserDetails();
       
-      // Get user details to find org ID before listing workflows
-      let orgId = null;
-      try {
-        const userDetails = await makeApiRequest('GET', '/users/me', apiKey);
-        
-        if (userDetails && userDetails.data && userDetails.data.orgs && userDetails.data.orgs.length > 0) {
-          orgId = userDetails.data.orgs[0].id;
-          console.log(`Using workspace (org_id): ${orgId}`);
-        } else {
-          console.error('Error: No workspace found for the user');
-          process.exit(1);
-        }
-      } catch (error) {
-        console.error(`Error getting user details: ${error.message}`);
-        process.exit(1);
+      // Get project ID from options or config
+      let projectId = options.project;
+      if (!projectId) {
+        projectId = await getProjectIdFromConfig();
       }
       
-      // If still no workflow ID and project ID provided, list all workflows and prompt user
-      if (!workflowId && options.project) {
-        console.log(`No workflow ID provided. Listing workflows in project ${options.project}...`);
+      if (projectId) {
+        console.log(`No workflow ID provided. Listing workflows in project ${projectId}...`);
+        
         try {
-          const workflows = await makeApiRequest('GET', `/projects/${options.project}/workflows?org_id=${orgId}`, apiKey);
+          // Get project workflows
+          const workflows = await apiClient.getProjectWorkflows(projectId);
           
           if (workflows && workflows.data && workflows.data.length > 0) {
             console.log('\nAvailable workflows:');
             workflows.data.forEach((workflow, index) => {
-              console.log(`${index + 1}. ${workflow.name} (${workflow.id})`);
+              const name = workflow.name || workflow.settings?.name || 'Unnamed Workflow';
+              console.log(`${index + 1}. ${name} (${workflow.id})`);
             });
             
             console.log('\nPlease use --workflow <id> to specify which workflow to retrieve triggers for.');
@@ -184,35 +127,9 @@ async function listTriggers(options) {
           console.error(`Error fetching workflows: ${error.message}`);
           return;
         }
-      } else if (!workflowId && !options.project) {
-        // Try to get project ID from config.ini
-        const projectId = await getProjectIdFromConfig();
-        
-        if (projectId) {
-          console.log(`No workflow ID provided. Listing workflows in project ${projectId}...`);
-          try {
-            const workflows = await makeApiRequest('GET', `/projects/${projectId}/workflows?org_id=${orgId}`, apiKey);
-            
-            if (workflows && workflows.data && workflows.data.length > 0) {
-              console.log('\nAvailable workflows:');
-              workflows.data.forEach((workflow, index) => {
-                console.log(`${index + 1}. ${workflow.name} (${workflow.id})`);
-              });
-              
-              console.log('\nPlease use --workflow <id> to specify which workflow to retrieve triggers for.');
-              return;
-            } else {
-              console.log('No workflows found in the project.');
-              return;
-            }
-          } catch (error) {
-            console.error(`Error fetching workflows: ${error.message}`);
-            return;
-          }
-        } else {
-          console.error('Error: Workflow ID is required. Please provide --workflow <id> or run this command from a workflow directory.');
-          process.exit(1);
-        }
+      } else {
+        console.error('Error: Workflow ID is required. Please provide --workflow <id> or run this command from a workflow directory.');
+        process.exit(1);
       }
     }
     
@@ -221,511 +138,209 @@ async function listTriggers(options) {
       process.exit(1);
     }
     
-    // Get user details to find org ID
-    console.log('Fetching user details to determine workspace...');
-    let orgId = null;
-    try {
-      const userDetails = await makeApiRequest('GET', '/users/me', apiKey);
-      
-      if (!userDetails || !userDetails.data || !userDetails.data.id) {
-        console.error('Error: Failed to fetch user details');
-        process.exit(1);
-      }
-      
-      // Get the first organization (workspace) from the user's details
-      if (userDetails.data.orgs && userDetails.data.orgs.length > 0) {
-        orgId = userDetails.data.orgs[0].id;
-        console.log(`Using workspace (org_id): ${orgId}`);
-      } else {
-        console.error('Error: No workspace found for the user');
-        process.exit(1);
-      }
-    } catch (error) {
-      console.error(`Error getting user details: ${error.message}`);
-      process.exit(1);
-    }
-    
-    // Special handling for Pipedream unique IDs (p_*)
+    // Special handling for Pipedream IDs that start with p_
     if (workflowId.startsWith('p_')) {
       console.log(`Detected Pipedream ID with p_ prefix: ${workflowId}`);
       
       try {
-        // First, try to get components directly - this works for many p_ identifiers
-        console.log(`Trying to fetch components for ${workflowId}...`);
-        const components = await makeApiRequest('GET', `/components/${workflowId}?org_id=${orgId}`, apiKey);
+        // First try to get the workflow details directly
+        const workflow = await apiClient.getWorkflow(workflowId);
         
-        if (components && components.data) {
-          console.log(`\nFound components for: ${workflowId}`);
-          console.log(`Name: ${components.data.name || 'Unnamed Component'}`);
-          console.log('\nTrigger Information:');
-          console.log('-'.repeat(50));
+        if (workflow && workflow.data) {
+          const workflowName = workflow.data.name || workflow.data.settings?.name || 'Unnamed Workflow';
+          console.log(`\nWorkflow: ${workflowName} (${workflowId})`);
           
-          // Display webhook URL if it's HTTP type
-          if (components.data.http_url) {
-            console.log(`Type: HTTP Webhook`);
-            console.log(`Webhook URL: ${components.data.http_url}`);
-          } else if (components.data.schedule) {
-            console.log(`Type: Schedule`);
-            console.log(`Schedule: ${components.data.schedule}`);
-          } else {
-            console.log(`Type: ${components.data.type || 'Unknown'}`);
+          // Extract triggers from components
+          const components = workflow.data.components || [];
+          const triggers = components.filter(component => 
+            component.type === 'source' || 
+            component.type === 'trigger' || 
+            component.key === 'trigger' ||
+            (component.source && component.source.type)
+          );
+          
+          if (triggers.length === 0) {
+            console.log('No triggers found for this workflow.');
+            process.exit(0);
           }
           
-          // Display full configuration for debugging
-          console.log('\nFull Configuration:');
-          console.log(JSON.stringify(components.data, null, 2));
-          
+          console.log('\nTriggers:');
           console.log('-'.repeat(50));
+          
+          triggers.forEach((trigger, index) => {
+            const triggerType = trigger.source?.type || trigger.type;
+            const triggerApp = trigger.app || 'unknown';
+            
+            console.log(`Trigger #${index + 1}: ${triggerApp} (${triggerType})`);
+            
+            if (triggerApp === 'http' || triggerType === 'webhook') {
+              // For HTTP webhook, display the URL
+              const webhookUrl = `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
+              console.log(`Webhook URL: ${webhookUrl}`);
+            } else if (triggerApp === 'schedule' || triggerType === 'cron') {
+              // For schedule trigger, display the cron expression
+              const cronExpression = trigger.source?.cron || trigger.options?.cron || 'unknown';
+              console.log(`Schedule: ${cronExpression}`);
+            }
+            
+            // Display all options/configuration for debugging
+            console.log('Configuration:');
+            if (trigger.source) {
+              console.log(JSON.stringify(trigger.source, null, 2));
+            } else if (trigger.options) {
+              console.log(JSON.stringify(trigger.options, null, 2));
+            } else {
+              console.log(JSON.stringify(trigger, null, 2));
+            }
+            
+            console.log('-'.repeat(50));
+          });
+          
           process.exit(0);
         }
-      } catch (componentsError) {
-        console.log(`Note: Could not find components: ${componentsError.message}`);
-      }
-      
-      // Try a different components endpoint format (sometimes needed for HTTP sources)
-      try {
-        console.log(`Trying alternate component format for ${workflowId}...`);
-        const endpoint = `/orgs/${orgId}/components/${workflowId}`;
-        const components = await makeApiRequest('GET', endpoint, apiKey);
+      } catch (error) {
+        console.log(`Failed to get workflow directly: ${error.message}`);
         
-        if (components && components.data) {
-          console.log(`\nFound components for: ${workflowId} using alternate endpoint`);
-          console.log(`Name: ${components.data.name || 'Unnamed Component'}`);
-          console.log('\nTrigger Information:');
-          console.log('-'.repeat(50));
+        // Try to get triggers specifically
+        try {
+          console.log('Attempting to fetch workflow triggers directly...');
+          const triggers = await apiClient.getWorkflowTriggers(workflowId);
           
-          // Display webhook URL if it's HTTP type
-          if (components.data.http_url) {
-            console.log(`Type: HTTP Webhook`);
-            console.log(`Webhook URL: ${components.data.http_url}`);
-          } else if (components.data.schedule) {
-            console.log(`Type: Schedule`);
-            console.log(`Schedule: ${components.data.schedule}`);
-          } else {
-            console.log(`Type: ${components.data.type || 'Unknown'}`);
+          if (triggers && (triggers.data || triggers.extracted)) {
+            console.log(`\nTriggers for workflow: ${workflowId}`);
+            console.log('-'.repeat(50));
+            
+            const triggerData = triggers.data || [];
+            
+            if (triggerData.length === 0) {
+              console.log('No triggers found for this workflow.');
+              process.exit(0);
+            }
+            
+            triggerData.forEach((trigger, index) => {
+              const triggerType = trigger.source?.type || trigger.type;
+              const triggerApp = trigger.app || 'unknown';
+              
+              console.log(`Trigger #${index + 1}: ${triggerApp} (${triggerType})`);
+              
+              if (triggerApp === 'http' || triggerType === 'webhook') {
+                // For HTTP webhook, display the URL
+                const webhookUrl = `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
+                console.log(`Webhook URL: ${webhookUrl}`);
+              } else if (triggerApp === 'schedule' || triggerType === 'cron') {
+                // For schedule trigger, display the cron expression
+                const cronExpression = trigger.source?.cron || trigger.options?.cron || 'unknown';
+                console.log(`Schedule: ${cronExpression}`);
+              }
+              
+              // Display all options/configuration for debugging
+              console.log('Configuration:');
+              console.log(JSON.stringify(trigger, null, 2));
+              
+              console.log('-'.repeat(50));
+            });
+            
+            process.exit(0);
           }
-          
-          // Display full configuration for debugging
-          console.log('\nFull Configuration:');
-          console.log(JSON.stringify(components.data, null, 2));
-          
-          console.log('-'.repeat(50));
-          process.exit(0);
+        } catch (triggersError) {
+          console.log(`Failed to get triggers: ${triggersError.message}`);
         }
-      } catch (alternateError) {
-        console.log(`Note: Could not find components with alternate endpoint: ${alternateError.message}`);
-      }
-      
-      // Also try the HTTP triggers endpoint for p_* IDs
-      try {
-        console.log(`Trying HTTP triggers endpoint for ${workflowId}...`);
-        const endpoint = `/users/me/http_endpoints/${workflowId}?org_id=${orgId}`;
-        const httpTrigger = await makeApiRequest('GET', endpoint, apiKey);
         
-        if (httpTrigger && httpTrigger.data) {
-          console.log(`\nFound HTTP trigger for: ${workflowId}`);
-          console.log(`Name: ${httpTrigger.data.name || 'Unnamed HTTP Trigger'}`);
-          console.log('\nTrigger Information:');
-          console.log('-'.repeat(50));
+        // Try to get HTTP source details if it's a direct source ID
+        try {
+          console.log('Trying to get source details directly...');
+          const sourceData = await apiClient.makeRequest(
+            'GET', 
+            `/sources/${workflowId}`, 
+            null, 
+            { rawEndpoint: true }
+          );
           
-          console.log(`Type: HTTP Webhook`);
-          const webhookUrl = httpTrigger.data.url || `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
-          console.log(`Webhook URL: ${webhookUrl}`);
-          
-          // Display full configuration for debugging
-          console.log('\nFull Configuration:');
-          console.log(JSON.stringify(httpTrigger.data, null, 2));
-          
-          console.log('-'.repeat(50));
-          process.exit(0);
-        }
-      } catch (httpError) {
-        console.log(`Note: Could not find HTTP trigger: ${httpError.message}`);
-      }
-      
-      try {
-        // Next, try the sources endpoint
-        console.log(`Trying sources endpoint for ${workflowId}...`);
-        const source = await makeApiRequest('GET', `/sources/${workflowId}?org_id=${orgId}`, apiKey);
-        
-        if (!source || !source.data) {
-          console.error('Error: Failed to fetch source details - No data returned');
-          
-          // Try to get the project data instead
-          console.log('\nTrying to get project information instead...');
-          try {
-            // Determine the project directory (go up one level if in workflow dir)
-            const currentDir = process.cwd();
-            const dirName = path.basename(currentDir);
-            let projectDir = currentDir;
+          if (sourceData && sourceData.data) {
+            console.log(`\nSource: ${sourceData.data.name || 'Unnamed Source'} (${workflowId})`);
+            console.log('\nTrigger Information:');
+            console.log('-'.repeat(50));
             
-            // If current directory is a workflow directory, go up one level
-            if (dirName === workflowId || dirName.startsWith('wf_') || dirName.startsWith('p_')) {
-              projectDir = path.dirname(currentDir);
-              console.log(`Detected workflow directory, using parent directory: ${projectDir}`);
-            }
+            const source = sourceData.data;
             
-            // Try to get project ID from workflow.json first
-            let projectId = null;
-            try {
-              // Check current directory for workflow.json
-              let workflowJsonPath = path.join(currentDir, 'workflow.json');
-              let exists = await fs.access(workflowJsonPath).then(() => true).catch(() => false);
+            if (source.type === 'http') {
+              console.log(`Type: HTTP Webhook`);
               
-              if (exists) {
-                const workflowContent = await fs.readFile(workflowJsonPath, 'utf8');
-                const workflowData = JSON.parse(workflowContent);
-                
-                if (workflowData && workflowData.project_id) {
-                  projectId = workflowData.project_id;
-                  console.log(`Found project ID in workflow.json: ${projectId}`);
-                }
-              }
-            } catch (e) {
-              console.log(`Note: Error reading workflow.json: ${e.message}`);
-            }
-            
-            // Try to get project ID from config.ini if not found in workflow.json
-            if (!projectId) {
-              try {
-                // First try config.ini in current directory 
-                let configPath = path.join(currentDir, 'config.ini');
-                let exists = await fs.access(configPath).then(() => true).catch(() => false);
-                
-                // If not found and we're in a workflow directory, check parent directory
-                if (!exists && currentDir !== projectDir) {
-                  configPath = path.join(projectDir, 'config.ini');
-                  exists = await fs.access(configPath).then(() => true).catch(() => false);
-                }
-                
-                if (exists) {
-                  const configContent = await fs.readFile(configPath, 'utf8');
-                  const config = ini.parse(configContent);
-                  
-                  if (config.project && config.project.id) {
-                    projectId = config.project.id;
-                    console.log(`Found project ID in config.ini: ${projectId}`);
-                  }
-                }
-              } catch (e) {
-                console.log(`Note: Error reading config.ini: ${e.message}`);
-              }
-            }
-            
-            // Last resort: try to check if the ID itself is potentially a workflow ID
-            // instead of a source ID by checking if the second character is a different letter
-            if (!projectId && workflowId.startsWith('p_')) {
-              // If it matches p_* pattern but might be a direct workflow ID,
-              // try extracting project ID directly from API
-              try {
-                console.log(`Trying alternate API endpoint for ${workflowId}...`);
-                const workflowDetails = await makeApiRequest('GET', `/workflows/${workflowId}?org_id=${orgId}`, apiKey);
-                
-                if (workflowDetails && workflowDetails.data && workflowDetails.data.project_id) {
-                  projectId = workflowDetails.data.project_id;
-                  console.log(`Found project ID from API: ${projectId}`);
-                }
-              } catch (apiError) {
-                console.log(`Note: Could not get project ID from API: ${apiError.message}`);
-              }
-            }
-            
-            if (projectId) {
-              let projectWorkflows = null;
+              // Extract webhook URL from data
+              const webhookUrl = source.webhook_url || `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
+              console.log(`Webhook URL: ${webhookUrl}`);
               
-              // Try different endpoint formats - sometimes the API requires different path structures
-              try {
-                console.log(`Trying standard project workflows endpoint...`);
-                const workflows = await makeApiRequest('GET', `/projects/${projectId}/workflows?org_id=${orgId}`, apiKey);
-                
-                if (workflows && workflows.data) {
-                  projectWorkflows = workflows;
-                  console.log(`Success with standard endpoint!`);
-                }
-              } catch (e) {
-                console.log(`Standard endpoint failed: ${e.message}`);
+              if (source.path) {
+                console.log(`Path: ${source.path}`);
               }
+            } else if (source.type === 'schedule') {
+              console.log(`Type: Schedule`);
               
-              // If first attempt failed, try alternative endpoint
-              if (!projectWorkflows) {
-                try {
-                  console.log(`Trying alternative project endpoint...`);
-                  const workflows = await makeApiRequest('GET', `/orgs/${orgId}/projects/${projectId}/workflows`, apiKey);
-                  
-                  if (workflows && workflows.data) {
-                    projectWorkflows = workflows;
-                    console.log(`Success with alternative endpoint!`);
-                  }
-                } catch (e) {
-                  console.log(`Alternative endpoint failed: ${e.message}`);
-                }
-              }
-              
-              // If both previous attempts failed, try listing all workflows and filtering
-              if (!projectWorkflows) {
-                try {
-                  console.log(`Trying general workflows endpoint...`);
-                  const allWorkflows = await makeApiRequest('GET', `/workflows?org_id=${orgId}`, apiKey);
-                  
-                  if (allWorkflows && allWorkflows.data) {
-                    // Filter to only include workflows for this project
-                    const filteredWorkflows = allWorkflows.data.filter(w => 
-                      w.project_id === projectId || 
-                      w.project === projectId
-                    );
-                    
-                    projectWorkflows = { data: filteredWorkflows };
-                    console.log(`Found ${filteredWorkflows.length} workflows for project ${projectId} using general endpoint`);
-                  }
-                } catch (e) {
-                  console.log(`General endpoint failed: ${e.message}`);
-                }
-              }
-              
-              // Last attempt - try pulling specific endpoints by project name
-              if (!projectWorkflows) {
-                try {
-                  console.log(`Trying to directly fetch project details...`);
-                  const projectDetails = await makeApiRequest('GET', `/projects/${projectId}?org_id=${orgId}`, apiKey);
-                  
-                  if (projectDetails && projectDetails.data) {
-                    console.log(`Project details retrieved: ${projectDetails.data.name}`);
-                    // The API might provide the workflows URL or other details we can use
-                  }
-                } catch (e) {
-                  console.log(`Project details endpoint failed: ${e.message}`);
-                }
-                
-                // Set empty results if all attempts failed
-                if (!projectWorkflows) {
-                  projectWorkflows = { data: [] };
-                }
-              }
-              
-              // Display the workflows found (if any)
-              if (projectWorkflows.data && projectWorkflows.data.length > 0) {
-                console.log('\nWorkflows in this project:');
-                projectWorkflows.data.forEach((workflow, index) => {
-                  console.log(`${index + 1}. ${workflow.name || 'Unnamed Workflow'} (${workflow.id})`);
-                });
-                
-                console.log('\nPlease use one of these workflow IDs with --workflow option.');
-                process.exit(0);
-              } else {
-                console.log('No workflows found in this project. The API key may not have sufficient permissions or the project may be empty.');
-                console.log(`Project ID used: ${projectId}`);
-                console.log(`Organization ID used: ${orgId}`);
-                process.exit(0);
+              if (source.schedule) {
+                console.log(`Schedule: ${source.schedule}`);
               }
             } else {
-              console.error('Could not determine project ID');
-              process.exit(1);
+              console.log(`Type: ${source.type || 'Unknown'}`);
             }
-          } catch (projectError) {
-            console.error(`Error fetching project information: ${projectError.message}`);
-            process.exit(1);
+            
+            // Display full configuration for debugging
+            console.log('\nFull Configuration:');
+            console.log(JSON.stringify(source, null, 2));
+            
+            console.log('-'.repeat(50));
+            process.exit(0);
           }
+        } catch (sourceError) {
+          console.log(`Failed to get source details: ${sourceError.message}`);
         }
         
-        // If we successfully got the source data, show trigger information
-        console.log(`\nSource: ${source.data.name || 'Unnamed Source'} (${workflowId})`);
-        console.log('\nTrigger Information:');
-        console.log('-'.repeat(50));
+        // If all attempts failed, try to list all project workflows
+        console.log('Failed to get trigger details. Looking for project information...');
         
-        const sourceData = source.data;
+        // Try to get project ID from workflow.json or config.ini
+        const projectId = await getProjectIdFromConfig();
         
-        if (sourceData.type === 'http') {
-          console.log(`Type: HTTP Webhook`);
+        if (projectId) {
+          console.log(`Found project ID: ${projectId}. Listing all workflows...`);
           
-          // Extract webhook URL from data
-          const webhookUrl = sourceData.webhook_url || `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
-          console.log(`Webhook URL: ${webhookUrl}`);
-          
-          if (sourceData.path) {
-            console.log(`Path: ${sourceData.path}`);
-          }
-        } else if (sourceData.type === 'schedule') {
-          console.log(`Type: Schedule`);
-          
-          if (sourceData.schedule) {
-            console.log(`Schedule: ${sourceData.schedule}`);
-          }
-        } else {
-          console.log(`Type: ${sourceData.type || 'Unknown'}`);
-        }
-        
-        // Display full configuration for debugging
-        console.log('\nFull Configuration:');
-        console.log(JSON.stringify(sourceData, null, 2));
-        
-        console.log('-'.repeat(50));
-        process.exit(0);
-      } catch (error) {
-        console.error(`Error fetching source details: ${error.message}`);
-        
-        // Try to list workflows in a project
-        console.log('\nTrying to list project workflows instead...');
-        
-        try {
-          // Determine the project directory (go up one level if in workflow dir)
-          const currentDir = process.cwd();
-          const dirName = path.basename(currentDir);
-          let projectDir = currentDir;
-          
-          // If current directory is a workflow directory, go up one level
-          if (dirName === workflowId || dirName.startsWith('wf_') || dirName.startsWith('p_')) {
-            projectDir = path.dirname(currentDir);
-            console.log(`Detected workflow directory, using parent directory: ${projectDir}`);
-          }
-          
-          // Try to get project ID from config.ini in the project directory
-          let projectId = null;
           try {
-            // First check in current directory
-            let configPath = path.join(currentDir, 'config.ini');
-            let exists = await fs.access(configPath).then(() => true).catch(() => false);
+            const workflows = await apiClient.getProjectWorkflows(projectId);
             
-            // If not found and not already in project dir, check parent directory
-            if (!exists && currentDir !== projectDir) {
-              configPath = path.join(projectDir, 'config.ini');
-              exists = await fs.access(configPath).then(() => true).catch(() => false);
-            }
-            
-            if (exists) {
-              const configContent = await fs.readFile(configPath, 'utf8');
-              const config = ini.parse(configContent);
-              
-              if (config.project && config.project.id) {
-                projectId = config.project.id;
-                console.log(`Found project ID in config.ini: ${projectId}`);
-              }
-            }
-          } catch (e) {
-            console.log(`Error reading config.ini: ${e.message}`);
-          }
-          
-          // If still no project ID, try to extract from workflow.json
-          if (!projectId) {
-            try {
-              // Use workflow.json in current directory if available
-              let workflowJsonPath = path.join(currentDir, 'workflow.json');
-              let exists = await fs.access(workflowJsonPath).then(() => true).catch(() => false);
-              
-              if (exists) {
-                const workflowContent = await fs.readFile(workflowJsonPath, 'utf8');
-                const workflowData = JSON.parse(workflowContent);
-                
-                if (workflowData && workflowData.project_id) {
-                  projectId = workflowData.project_id;
-                  console.log(`Found project ID in workflow.json: ${projectId}`);
-                }
-              }
-            } catch (e) {
-              console.log(`Error reading workflow.json: ${e.message}`);
-            }
-          }
-          
-          if (projectId) {
-            let projectWorkflows = null;
-            
-            // Try different API endpoints - Pipedream API can be inconsistent
-            try {
-              console.log(`Trying standard project workflows endpoint...`);
-              const workflows = await makeApiRequest('GET', `/projects/${projectId}/workflows?org_id=${orgId}`, apiKey);
-              
-              if (workflows && workflows.data) {
-                projectWorkflows = workflows;
-                console.log(`Success with standard endpoint!`);
-              }
-            } catch (e) {
-              console.log(`Standard endpoint failed: ${e.message}`);
-            }
-            
-            // Try alternative endpoint if first attempt failed
-            if (!projectWorkflows) {
-              try {
-                console.log(`Trying alternative project endpoint...`);
-                const workflows = await makeApiRequest('GET', `/orgs/${orgId}/projects/${projectId}/workflows`, apiKey);
-                
-                if (workflows && workflows.data) {
-                  projectWorkflows = workflows;
-                  console.log(`Success with alternative endpoint!`);
-                }
-              } catch (e) {
-                console.log(`Alternative endpoint failed: ${e.message}`);
-              }
-            }
-            
-            // Try general endpoint and filter results if needed
-            if (!projectWorkflows) {
-              try {
-                console.log(`Trying general workflows endpoint...`);
-                const allWorkflows = await makeApiRequest('GET', `/workflows?org_id=${orgId}`, apiKey);
-                
-                if (allWorkflows && allWorkflows.data) {
-                  // Filter to only include workflows from this project
-                  const filteredWorkflows = allWorkflows.data.filter(w => 
-                    w.project_id === projectId || 
-                    w.project === projectId
-                  );
-                  
-                  projectWorkflows = { data: filteredWorkflows };
-                  console.log(`Found ${filteredWorkflows.length} workflows for project ${projectId} using general endpoint`);
-                }
-              } catch (e) {
-                console.log(`General endpoint failed: ${e.message}`);
-              }
-            }
-            
-            // Create empty data array if all attempts failed
-            if (!projectWorkflows) {
-              projectWorkflows = { data: [] };
-            }
-            
-            // Display the workflows found (if any)
-            if (projectWorkflows.data && projectWorkflows.data.length > 0) {
+            if (workflows && workflows.data && workflows.data.length > 0) {
               console.log('\nWorkflows in this project:');
-              projectWorkflows.data.forEach((workflow, index) => {
-                console.log(`${index + 1}. ${workflow.name || 'Unnamed Workflow'} (${workflow.id})`);
+              workflows.data.forEach((workflow, index) => {
+                const name = workflow.name || workflow.settings?.name || 'Unnamed Workflow';
+                console.log(`${index + 1}. ${name} (${workflow.id})`);
               });
               
               console.log('\nPlease use one of these workflow IDs with --workflow option.');
               process.exit(0);
             } else {
-              console.log('No workflows found in this project. The API key may not have sufficient permissions or the project may be empty.');
-              console.log(`Project ID used: ${projectId}`);
-              console.log(`Organization ID used: ${orgId}`);
-              process.exit(0);
+              console.log('No workflows found in this project.');
+              process.exit(1);
             }
-          } else {
-            console.error('Could not determine project ID');
-            console.log('\nPossible solutions:');
-            console.log('1. Run this command from the project root directory where config.ini is located');
-            console.log('2. Specify a valid workflow ID with --workflow option');
-            console.log('3. Specify a valid project ID with --project option');
-            console.log('4. Check that your API key has the correct permissions');
-            console.log('5. Verify that workflow.json contains a project_id field');
-            console.log('\nAPI Key being used:', apiKey ? apiKey.substring(0, 6) + '...' : 'none');
+          } catch (projectWorkflowsError) {
+            console.error(`Error fetching project workflows: ${projectWorkflowsError.message}`);
             process.exit(1);
           }
-        } catch (projectError) {
-          console.error(`Error fetching project workflows: ${projectError.message}`);
+        } else {
+          console.error('Could not determine project ID or find workflow/trigger details.');
           process.exit(1);
         }
       }
     } else {
-      // Standard workflow ID handling (wf_*)
+      // Standard workflow ID handling
       console.log(`Fetching details for workflow ${workflowId}...`);
-      let workflow;
+      
       try {
-        workflow = await makeApiRequest('GET', `/workflows/${workflowId}?org_id=${orgId}`, apiKey);
+        const workflow = await apiClient.getWorkflow(workflowId);
         
         if (!workflow || !workflow.data) {
           console.error('Error: Failed to fetch workflow details - No data returned');
           process.exit(1);
         }
         
-        const workflowName = workflow.data.name || 'Unnamed Workflow';
+        const workflowName = workflow.data.name || workflow.data.settings?.name || 'Unnamed Workflow';
         console.log(`\nWorkflow: ${workflowName} (${workflowId})`);
         
         // Extract triggers from components
@@ -733,6 +348,7 @@ async function listTriggers(options) {
         const triggers = components.filter(component => 
           component.type === 'source' || 
           component.type === 'trigger' || 
+          component.key === 'trigger' ||
           (component.source && component.source.type)
         );
         
@@ -750,11 +366,11 @@ async function listTriggers(options) {
           
           console.log(`Trigger #${index + 1}: ${triggerApp} (${triggerType})`);
           
-          if (triggerApp === 'http') {
+          if (triggerApp === 'http' || triggerType === 'webhook') {
             // For HTTP webhook, display the URL
             const webhookUrl = `https://webhook.pipedream.com/v1/sources/${workflowId}/events`;
             console.log(`Webhook URL: ${webhookUrl}`);
-          } else if (triggerApp === 'schedule') {
+          } else if (triggerApp === 'schedule' || triggerType === 'cron') {
             // For schedule trigger, display the cron expression
             const cronExpression = trigger.source?.cron || trigger.options?.cron || 'unknown';
             console.log(`Schedule: ${cronExpression}`);
@@ -766,14 +382,14 @@ async function listTriggers(options) {
             console.log(JSON.stringify(trigger.source, null, 2));
           } else if (trigger.options) {
             console.log(JSON.stringify(trigger.options, null, 2));
+          } else {
+            console.log(JSON.stringify(trigger, null, 2));
           }
           
           console.log('-'.repeat(50));
         });
         
-        // Make sure to exit the process after returning data
         process.exit(0);
-        
       } catch (error) {
         console.error(`Error fetching workflow details: ${error.message}`);
         process.exit(1);

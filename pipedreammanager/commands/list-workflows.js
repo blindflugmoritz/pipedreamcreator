@@ -1,55 +1,8 @@
 const fs = require('fs').promises;
 const path = require('path');
 const ini = require('ini');
-const https = require('https');
 require('dotenv').config();
-
-// Helper function to make API requests
-async function makeApiRequest(method, endpoint, apiKey, data = null) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.pipedream.com',
-      port: 443,
-      path: `/v1${endpoint}`,
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      let responseData = '';
-      
-      res.on('data', (chunk) => {
-        responseData += chunk;
-      });
-      
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const parsedData = JSON.parse(responseData);
-            resolve(parsedData);
-          } catch (error) {
-            reject(new Error(`Failed to parse response: ${error.message}`));
-          }
-        } else {
-          reject(new Error(`Request failed with status code ${res.statusCode}: ${responseData}`));
-        }
-      });
-    });
-    
-    req.on('error', (error) => {
-      reject(error);
-    });
-    
-    if (data) {
-      req.write(JSON.stringify(data));
-    }
-    
-    req.end();
-  });
-}
+const PipedreamApiClient = require('../utils/api-client');
 
 async function listWorkflows(options) {
   try {
@@ -59,6 +12,9 @@ async function listWorkflows(options) {
       console.error('Error: API key is required. Provide via --apiKey option or set PIPEDREAM_API_KEY in .env file');
       process.exit(1);
     }
+    
+    // Initialize API client
+    const apiClient = new PipedreamApiClient(apiKey);
     
     // Get project information
     let projectId = options.project;
@@ -88,7 +44,42 @@ async function listWorkflows(options) {
     
     // Get workflows for the project
     console.log(`Fetching workflows for project: ${projectId}`);
-    const workflows = await makeApiRequest('GET', `/projects/${projectId}/workflows`, apiKey);
+    
+    let workflows;
+    try {
+      workflows = await apiClient.getProjectWorkflows(projectId);
+    } catch (error) {
+      console.error(`Failed to fetch workflows: ${error.message}`);
+      
+      // Try to get all workflows and filter manually
+      try {
+        console.log('Attempting to fetch all workflows and filter by project...');
+        const allWorkflows = await apiClient.makeRequest('GET', '/users/me/workflows');
+        
+        if (allWorkflows && allWorkflows.data) {
+          // Filter for this project
+          const filteredWorkflows = {
+            data: allWorkflows.data.filter(workflow => 
+              workflow.project_id === projectId || 
+              workflow.project?.id === projectId ||
+              workflow.settings?.project_id === projectId ||
+              workflow.settings?.projectId === projectId
+            )
+          };
+          
+          if (filteredWorkflows.data.length > 0) {
+            console.log(`Found ${filteredWorkflows.data.length} workflows for project from all user workflows`);
+            workflows = filteredWorkflows;
+          } else {
+            console.error('No workflows found for this project ID in user workflows');
+            process.exit(1);
+          }
+        }
+      } catch (fallbackError) {
+        console.error(`Fallback method failed: ${fallbackError.message}`);
+        process.exit(1);
+      }
+    }
     
     if (!workflows || !workflows.data) {
       console.error('Error: Failed to fetch workflows');
@@ -108,8 +99,9 @@ async function listWorkflows(options) {
     
     workflows.data.forEach(workflow => {
       const id = workflow.id.padEnd(20);
-      const name = (workflow.settings?.name || 'Unnamed Workflow').padEnd(40);
-      const status = workflow.settings?.active ? 'Active' : 'Inactive';
+      // Handle different data structures (some endpoints use settings.name, others use name directly)
+      const name = (workflow.name || workflow.settings?.name || 'Unnamed Workflow').padEnd(40);
+      const status = workflow.active || workflow.settings?.active ? 'Active' : 'Inactive';
       
       console.log(`${id} | ${name} | ${status}`);
     });

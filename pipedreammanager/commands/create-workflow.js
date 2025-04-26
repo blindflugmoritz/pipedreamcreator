@@ -1,9 +1,9 @@
 const fs = require('fs').promises;
 const path = require('path');
 const ini = require('ini');
-const https = require('https');
 const crypto = require('crypto');
 require('dotenv').config();
+const PipedreamApiClient = require('../utils/api-client');
 
 // Helper function to generate a random path for HTTP webhooks
 function generateRandomPath() {
@@ -18,53 +18,6 @@ async function ensureDir(dirPath) {
   }
 }
 
-// Helper function to make API requests
-async function makeApiRequest(method, endpoint, apiKey, data = null) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.pipedream.com',
-      port: 443,
-      path: `/v1${endpoint}`,
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      let responseData = '';
-      
-      res.on('data', (chunk) => {
-        responseData += chunk;
-      });
-      
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const parsedData = JSON.parse(responseData);
-            resolve(parsedData);
-          } catch (error) {
-            reject(new Error(`Failed to parse response: ${error.message}`));
-          }
-        } else {
-          reject(new Error(`Request failed with status code ${res.statusCode}: ${responseData}`));
-        }
-      });
-    });
-    
-    req.on('error', (error) => {
-      reject(error);
-    });
-    
-    if (data) {
-      req.write(JSON.stringify(data));
-    }
-    
-    req.end();
-  });
-}
-
 // Main function to create a workflow
 async function createWorkflow(options) {
   try {
@@ -76,6 +29,9 @@ async function createWorkflow(options) {
       console.error('Error: API key is required. Provide via --apiKey option or set PIPEDREAM_API_KEY in .env file');
       process.exit(1);
     }
+    
+    // Initialize API client
+    const apiClient = new PipedreamApiClient(apiKey);
     
     // Get project information
     let projectId = options.project;
@@ -106,7 +62,7 @@ async function createWorkflow(options) {
     
     // Get user details to find org ID
     console.log('Fetching user details to determine workspace...');
-    const userDetails = await makeApiRequest('GET', '/users/me', apiKey);
+    const userDetails = await apiClient.getUserDetails();
     
     if (!userDetails || !userDetails.data || !userDetails.data.id) {
       console.error('Error: Failed to fetch user details');
@@ -199,7 +155,16 @@ async function createWorkflow(options) {
     
     // Create the workflow via API
     console.log('Creating workflow via API...');
-    const newWorkflow = await makeApiRequest('POST', '/workflows', apiKey, workflowData);
+    
+    let newWorkflow;
+    try {
+      // Try with v2 API first
+      newWorkflow = await apiClient.makeRequest('POST', '/workflows', workflowData, { useV2: true });
+    } catch (v2Error) {
+      console.log(`V2 API failed: ${v2Error.message}. Trying V1...`);
+      // Try with v1 API
+      newWorkflow = await apiClient.makeRequest('POST', '/workflows', workflowData, { useV1: true });
+    }
     
     if (!newWorkflow || !newWorkflow.data || !newWorkflow.data.id) {
       console.error('Error: Failed to create workflow');
