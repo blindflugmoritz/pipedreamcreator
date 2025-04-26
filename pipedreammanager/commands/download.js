@@ -67,9 +67,9 @@ async function makeGraphQLRequest(projectId, apiKey, first = 50, after = null) {
     const cleanProjectId = projectId.trim();
     console.log(`Using clean project ID for GraphQL: ${cleanProjectId}`);
     
-    // Try alternative query format for direct project IDs
+    // Match exactly what works in list-workflows.js
     const variables = {
-      "filesystemEntriesAfter": null,
+      "filesystemEntriesAfter": 0, // Changed from null to 0 to match list-workflows
       "filesystemEntriesFirst": 50,
       "filesystemEntriesOrderBy": [],
       "filesystemEntriesPath": "/",
@@ -103,9 +103,11 @@ async function makeGraphQLRequest(projectId, apiKey, first = 50, after = null) {
         'Accept': 'application/graphql-response+json, application/graphql+json, application/json, text/event-stream, multipart/mixed',
         'Authorization': `Bearer ${apiKey}`,
         'User-Agent': 'pdmanager-cli',
+        // Note: list-workflows doesn't use Content-Type, keeping it here
         'Content-Type': 'application/json',
         'Origin': 'https://pipedream.com',
-        'Referer': `https://pipedream.com/@/projects/${cleanProjectId}/tree`,
+        // Based on the successful example from the user, this format works
+        'Referer': `https://pipedream.com/@momoetomo/projects/${cleanProjectId}/`,
         'X-Pd-Ajax': '1'
       }
     };
