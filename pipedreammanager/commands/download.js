@@ -63,17 +63,22 @@ function extractIdFromUrl(url) {
  */
 async function makeGraphQLRequest(projectId, apiKey, first = 50, after = null) {
   return new Promise((resolve, reject) => {
-    // Create the GraphQL query exactly matching Pipedream's UI query structure
+    // Ensure project ID is properly formatted
+    const cleanProjectId = projectId.trim();
+    console.log(`Using clean project ID for GraphQL: ${cleanProjectId}`);
+    
+    // Try alternative query format for direct project IDs
     const variables = {
-      "filesystemEntriesAfter": 0,
+      "filesystemEntriesAfter": null,
       "filesystemEntriesFirst": 50,
       "filesystemEntriesOrderBy": [],
       "filesystemEntriesPath": "/",
-      "id": projectId,
+      "id": cleanProjectId,
       "withFilesystemEntries": true
     };
     
     // Create the request payload with persisted query hash
+    // Sometimes direct project IDs need different query parameters
     const payload = {
       operationName: "project",
       variables: variables,
@@ -98,8 +103,9 @@ async function makeGraphQLRequest(projectId, apiKey, first = 50, after = null) {
         'Accept': 'application/graphql-response+json, application/graphql+json, application/json, text/event-stream, multipart/mixed',
         'Authorization': `Bearer ${apiKey}`,
         'User-Agent': 'pdmanager-cli',
+        'Content-Type': 'application/json',
         'Origin': 'https://pipedream.com',
-        'Referer': `https://pipedream.com/@/projects/${projectId}/tree`,
+        'Referer': `https://pipedream.com/@/projects/${cleanProjectId}/tree`,
         'X-Pd-Ajax': '1'
       }
     };
@@ -375,6 +381,79 @@ async function createProjectConfig(projectDir, projectData, apiKey) {
 }
 
 /**
+ * Try to fetch project information using REST API
+ * @param {string} projectId The project ID
+ * @param {string} apiKey Pipedream API key
+ * @returns {Promise<Object>} Project data or null if not found
+ */
+async function tryFetchProjectViaRestApi(projectId, apiKey) {
+  return new Promise((resolve, reject) => {
+    console.log(`Trying to fetch project via REST API: ${projectId}`);
+    
+    // Try both org IDs
+    const orgIds = ["o_xeIro4n", "o_PwIjJKm"];
+    let successData = null;
+    
+    // Try each organization ID
+    const tryNextOrg = (index) => {
+      if (index >= orgIds.length) {
+        if (successData) {
+          resolve(successData);
+        } else {
+          reject(new Error("Could not fetch project with any org ID"));
+        }
+        return;
+      }
+      
+      const orgId = orgIds[index];
+      const options = {
+        hostname: 'api.pipedream.com',
+        port: 443,
+        path: `/v1/projects/${projectId}?org_id=${orgId}`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      console.log(`Making REST API request for project: GET https://api.pipedream.com${options.path}`);
+      
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const parsedData = JSON.parse(data);
+              console.log(`REST API success with org ID: ${orgId}`);
+              successData = parsedData;
+              resolve(parsedData);
+            } catch (e) {
+              console.log(`Failed to parse REST API response: ${e.message}`);
+              tryNextOrg(index + 1);
+            }
+          } else {
+            console.log(`REST API failed with status ${res.statusCode}: ${data}`);
+            tryNextOrg(index + 1);
+          }
+        });
+      });
+      
+      req.on('error', (e) => {
+        console.log(`REST API request error: ${e.message}`);
+        tryNextOrg(index + 1);
+      });
+      
+      req.end();
+    };
+    
+    // Start trying with the first org ID
+    tryNextOrg(0);
+  });
+}
+
+/**
  * Download a project and all its workflows
  * @param {string} projectId The project ID
  * @param {string} apiKey The Pipedream API key
@@ -385,24 +464,78 @@ async function downloadProject(projectId, apiKey, options = {}) {
   try {
     console.log(`\n📁 Downloading project: ${projectId}`);
     
-    // Get project data using GraphQL
-    const graphqlResponse = await makeGraphQLRequest(projectId, apiKey);
+    // Always enable verbose for troubleshooting
+    const verbose = true;
     
-    // Show verbose response if option enabled
-    if (options.verbose) {
-      console.log('GraphQL Response:', JSON.stringify(graphqlResponse, null, 2));
+    // Try GraphQL first
+    let graphqlSuccess = false;
+    let projectData = null;
+    let workflows = [];
+    
+    try {
+      // Get project data using GraphQL
+      console.log(`Making GraphQL request for project ${projectId}...`);
+      const graphqlResponse = await makeGraphQLRequest(projectId, apiKey);
+      
+      // Always show response for debugging until we fix the issue
+      console.log('GraphQL Response Data Structure:', Object.keys(graphqlResponse));
+      
+      if (graphqlResponse.errors) {
+        console.error('GraphQL Errors:', JSON.stringify(graphqlResponse.errors, null, 2));
+      }
+      
+      // Show verbose response if option enabled
+      if (options.verbose || verbose) {
+        console.log('GraphQL Response:', JSON.stringify(graphqlResponse, null, 2));
+      }
+      
+      if (graphqlResponse.data?.project) {
+        projectData = graphqlResponse.data.project;
+        console.log(`Found project: ${projectData.name}`);
+        
+        // Extract workflows
+        workflows = extractWorkflowsFromGraphQL(graphqlResponse);
+        console.log(`Found ${workflows.length} workflows in project`);
+        graphqlSuccess = true;
+      } else {
+        console.error('Project data not found in GraphQL response. Available data keys:', 
+          graphqlResponse.data ? Object.keys(graphqlResponse.data) : 'No data object');
+      }
+    } catch (graphqlError) {
+      console.error(`GraphQL request failed: ${graphqlError.message}`);
     }
     
-    if (!graphqlResponse.data?.project) {
-      throw new Error(`Could not fetch project data for ${projectId}`);
+    // Try REST API as fallback if GraphQL failed
+    if (!graphqlSuccess) {
+      console.log("Falling back to REST API...");
+      try {
+        const restProjectData = await tryFetchProjectViaRestApi(projectId, apiKey);
+        
+        if (restProjectData && restProjectData.data) {
+          projectData = restProjectData.data;
+          console.log(`Found project via REST API: ${projectData.name}`);
+          
+          // Now we need to get workflows separately - this part might need to be implemented
+          // For now, we'll continue with empty workflows and let the user know
+          console.log("REST API doesn't provide workflow list, proceeding with project configuration only");
+          workflows = [];
+        } else {
+          throw new Error("Could not fetch project data from REST API");
+        }
+      } catch (restError) {
+        console.error(`REST API fallback failed: ${restError.message}`);
+        throw new Error(`Could not fetch project data using any available method for ${projectId}`);
+      }
     }
     
-    const projectData = graphqlResponse.data.project;
-    console.log(`Found project: ${projectData.name}`);
+    // At this point, we should have project data one way or another
+    if (!projectData) {
+      throw new Error(`Failed to fetch project data for ${projectId}`);
+    }
     
-    // Extract workflows
-    const workflows = extractWorkflowsFromGraphQL(graphqlResponse);
-    console.log(`Found ${workflows.length} workflows in project`);
+    console.log(`Processing project: ${projectData.name}`);
+    
+    // workflows array is already populated from either GraphQL or REST API
     
     if (workflows.length === 0) {
       console.log(`No workflows found in project ${projectId}`);
