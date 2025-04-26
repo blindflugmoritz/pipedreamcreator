@@ -480,11 +480,15 @@ async function downloadProject(projectId, apiKey, options = {}) {
     let graphqlSuccess = false;
     let projectData = null;
     let workflows = [];
+    let graphqlResponse = null; // Define this variable at the top level
     
     try {
       // Get project data using GraphQL
       console.log(`Making GraphQL request for project ${projectId}...`);
-      const graphqlResponse = await makeGraphQLRequest(projectId, apiKey);
+      const graphqlResponseData = await makeGraphQLRequest(projectId, apiKey);
+      
+      // Store in a variable that will remain in scope
+      graphqlResponse = graphqlResponseData;
       
       // Always show response for debugging until we fix the issue
       console.log('GraphQL Response Data Structure:', Object.keys(graphqlResponse));
@@ -544,13 +548,6 @@ async function downloadProject(projectId, apiKey, options = {}) {
     
     console.log(`Processing project: ${projectData.name}`);
     
-    // workflows array is already populated from either GraphQL or REST API
-    
-    if (workflows.length === 0) {
-      console.log(`No workflows found in project ${projectId}`);
-      return;
-    }
-    
     // Create project directory
     const outputBaseDir = options.outputDir || process.cwd();
     const projectDirName = projectData.name.replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -574,6 +571,16 @@ async function downloadProject(projectId, apiKey, options = {}) {
         path.join(projectDir, 'graphql_response.json'),
         JSON.stringify(graphqlResponse, null, 2)
       );
+    }
+    
+    // Check if we have any workflows to download
+    if (workflows.length === 0) {
+      console.log(`No workflows found in project ${projectId}`);
+      return {
+        success: 0,
+        failed: 0,
+        workflows: []
+      };
     }
     
     // Download each workflow
