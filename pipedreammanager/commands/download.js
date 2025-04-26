@@ -333,8 +333,15 @@ async function downloadSingleWorkflow(workflowId, apiKey, options = {}, projectD
       code
     );
     
+    // Save raw API response for future analysis and better updates
+    await fs.writeFile(
+      path.join(workflowDir, 'api_response.json'),
+      JSON.stringify(workflow, null, 2)
+    );
+    
     console.log(`✅ Successfully downloaded workflow: ${workflowName} (${workflowId})`);
     console.log(`   - Saved to: ${workflowDir}`);
+    console.log(`   - Saved files: workflow.json, code.js, api_response.json`);
     
     return {
       success: true,
@@ -555,6 +562,20 @@ async function downloadProject(projectId, apiKey, options = {}) {
     // Create project config file
     await createProjectConfig(projectDir, projectData, apiKey);
     
+    // Save raw project API response for future analysis
+    await fs.writeFile(
+      path.join(projectDir, 'project_api_response.json'),
+      JSON.stringify(projectData, null, 2)
+    );
+    
+    // If we have the full GraphQL response, save that too as it contains extra data
+    if (graphqlSuccess && graphqlResponse) {
+      await fs.writeFile(
+        path.join(projectDir, 'graphql_response.json'),
+        JSON.stringify(graphqlResponse, null, 2)
+      );
+    }
+    
     // Download each workflow
     console.log(`Downloading ${workflows.length} workflows...`);
     
@@ -580,6 +601,7 @@ async function downloadProject(projectId, apiKey, options = {}) {
     console.log(`Successfully downloaded: ${results.success}`);
     console.log(`Failed: ${results.failed}`);
     console.log(`Project directory: ${projectDir}`);
+    console.log(`Project files saved: config.ini, project_api_response.json${graphqlSuccess ? ', graphql_response.json' : ''}`);
     
     return results;
   } catch (error) {
