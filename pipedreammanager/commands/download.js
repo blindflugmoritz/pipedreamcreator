@@ -191,7 +191,8 @@ async function download(idOrUrl, options = {}) {
     console.log(`✅ Successfully downloaded workflow: ${workflowName} (${workflowId})`);
     console.log(`   - Saved to: ${workflowDir}`);
     
-    return metadata;
+    // Explicitly exit with success code
+    process.exit(0);
   } catch (error) {
     console.error(`Error downloading workflow: ${error}`);
     process.exit(1);
