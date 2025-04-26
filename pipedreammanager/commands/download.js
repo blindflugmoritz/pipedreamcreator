@@ -12,6 +12,42 @@ async function ensureDir(dirPath) {
   }
 }
 
+// Parse a Pipedream URL to extract workflow or project ID
+function extractIdFromUrl(url) {
+  try {
+    // Check if it's a URL
+    if (!url.startsWith('http')) {
+      // If it's just an ID, return it directly
+      return url;
+    }
+    
+    console.log(`Parsing URL: ${url}`);
+    
+    // Simple URL parsing to extract IDs
+    const parts = url.split('/');
+    
+    // Look for workflow or project IDs in the parts
+    for (const part of parts) {
+      if (part.startsWith('p_')) {
+        console.log(`Found workflow ID in URL: ${part}`);
+        return part;
+      }
+      if (part.startsWith('proj_')) {
+        console.log(`Found project ID in URL: ${part}`);
+        // For now, we don't handle projects, only individual workflows
+        console.log(`Note: Project URLs are not yet supported. Please use a workflow ID.`);
+        return null;
+      }
+    }
+    
+    console.log(`Could not find workflow ID in URL. Please use direct workflow ID (p_XXXXX).`);
+    return null;
+  } catch (error) {
+    console.error(`Error parsing URL: ${error.message}`);
+    return null;
+  }
+}
+
 // Very simple API request function - directly mimics the curl command that works
 function makeApiRequest(workflowId, apiKey, orgId) {
   return new Promise((resolve, reject) => {
@@ -49,7 +85,7 @@ function makeApiRequest(workflowId, apiKey, orgId) {
   });
 }
 
-// Also get workflow code - using the steps instead since there's no separate code endpoint
+// Extract code from the workflow data
 async function extractCodeFromWorkflow(workflow) {
   // The code is typically in the steps array, in a CodeCell component
   if (workflow && workflow.steps) {
@@ -64,10 +100,20 @@ async function extractCodeFromWorkflow(workflow) {
   return `// No code found for this workflow\n// Created: ${new Date().toISOString()}\n`;
 }
 
-// Simple function to download a workflow - does exactly what's needed, no more
-async function download(workflowId, options = {}) {
+// Main download function
+async function download(idOrUrl, options = {}) {
   try {
-    console.log(`Starting download for workflow: ${workflowId}`);
+    console.log(`Starting download for: ${idOrUrl}`);
+    
+    // Extract workflow ID from URL if needed
+    const workflowId = extractIdFromUrl(idOrUrl);
+    
+    if (!workflowId) {
+      console.error(`Could not determine workflow ID. Please provide a valid workflow ID (p_XXXXX) or URL.`);
+      process.exit(1);
+    }
+    
+    console.log(`Using workflow ID: ${workflowId}`);
     
     // Get API key from options or .env
     const apiKey = options.apiKey || process.env.PIPEDREAM_API_KEY;
@@ -79,12 +125,14 @@ async function download(workflowId, options = {}) {
     // Try both org IDs
     const orgIds = ["o_xeIro4n", "o_PwIjJKm"];
     let workflow = null;
+    let successOrgId = null;
     
     for (const orgId of orgIds) {
       try {
         console.log(`Trying with organization ID: ${orgId}`);
         workflow = await makeApiRequest(workflowId, apiKey, orgId);
         console.log(`Success with organization ID: ${orgId}`);
+        successOrgId = orgId;
         break; // Exit the loop if successful
       } catch (error) {
         console.log(`Failed with organization ID ${orgId}: ${error}`);
@@ -95,7 +143,7 @@ async function download(workflowId, options = {}) {
       throw new Error(`Could not fetch workflow with any organization ID`);
     }
     
-    // Extract code from the workflow data (instead of making a separate API call)
+    // Extract code from the workflow data
     const code = await extractCodeFromWorkflow(workflow);
     
     // Create output directory
@@ -106,7 +154,7 @@ async function download(workflowId, options = {}) {
     await ensureDir(workflowsDir);
     await ensureDir(workflowDir);
     
-    // Determine the workflow name from the triggers or steps
+    // Determine the workflow name
     let workflowName = `Workflow_${workflowId}`;
     if (workflow.name) {
       workflowName = workflow.name;
@@ -116,7 +164,8 @@ async function download(workflowId, options = {}) {
     const metadata = {
       id: workflowId,
       name: workflowName,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      org_id: successOrgId
     };
     
     // Extract trigger information if available
