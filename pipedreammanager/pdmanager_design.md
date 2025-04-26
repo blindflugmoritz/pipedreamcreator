@@ -24,7 +24,26 @@ The pdmanager tool has become overly complex with too many commands and options.
 ### Optional Commands
 1. **list-workflows**
    - Lists all workflows in a project
+   - this neds a new implementation since the official api doesnt not support listing all workflows of a project. 
+   - the way to implement is to use the inofficial graphsql api to download all details
+   the command for this is 
    
+   curl 'https://api.pipedream.com/graphql?operationName=project&variables=%7B%22filesystemEntriesAfter%22%3A0%2C%22filesystemEntriesFirst%22%3A50%2C%22filesystemEntriesOrderBy%22%3A%5B%5D%2C%22filesystemEntriesPath%22%3A%22%2F%22%2C%22id%22%3A%22proj_bysKeLM%22%2C%22withFilesystemEntries%22%3Atrue%7D&extensions=%7B%22persistedQuery%22%3A%7B%22sha256Hash%22%3A%22c63f9b48253705e21613676bac9271286e0fb7f01bb009d5829c00e60623055c%22%2C%22version%22%3A1%7D%7D' \
+  -H 'accept: application/graphql-response+json, application/graphql+json, application/json, text/event-stream, multipart/mixed' \
+  -H 'origin: https://pipedream.com' \
+  -H 'referer: https://pipedream.com/@momoetomo/projects/proj_bysKeLM/tree' \
+  -H 'authorization: Bearer e520482a8ea98b255dfafd7591b2e2d1' \
+  -H 'x-pd-ajax: 1'
+
+	where "id": "proj_bysKeLM",is the project id. you need to really analyze the graphql call.
+	afterwards to you can use it to get all workflow which you then individually can download with the api call 
+	
+	curl 'https://api.pipedream.com/v1/workflows/p_V9CAJB5?org_id=o_xeIro4n' \
+  -H 'Authorization: Bearer e520482a8ea98b255dfafd7591b2e2d1'
+
+	you should generate right folder structure in the file system
+ 	
+	
 2. **list-triggers**
    - Shows trigger information for a workflow
 
@@ -38,6 +57,12 @@ The pdmanager tool has become overly complex with too many commands and options.
    - Deploys a local workflow to Pipedream
    - Updates code and configurations via API
    - Validates app connections and requirements
+
+6. **download**
+   - Downloads projects or workflows from Pipedream
+   - Accepts Pipedream URLs (e.g., https://pipedream.com/@username/projects/proj_ID/)
+   - Creates complete local file structure with all workflows and components
+   - Sets up test fixtures and configuration files
 
 ## Commands to Remove
 - create-project (redundant with new-project)
@@ -70,6 +95,17 @@ The deploy command will:
 - Detect required app connections and provide guidance
 - Support dry-run mode to validate without deploying
 - Report deployment status and provide workflow URL
+
+### download Command
+The download command will:
+- Accept project URLs (e.g., https://pipedream.com/@username/projects/proj_ID/)
+- Parse URLs to extract project/workflow IDs
+- Fetch all workflows in a project via API
+- Download all workflow code, configurations, and triggers
+- Create appropriate directory structure for local development
+- Set up test fixtures for each workflow component
+- Support downloading individual workflows when needed
+- Create project-level configuration files
 
 ### Puppeteer Implementation
 - Keep browser automation simple but robust
@@ -122,12 +158,21 @@ pdmanager deploy --workflow p_abc123 --apiKey YOUR_API_KEY
 - **Browser Interface (open)**: Works well (7/10)
 
 ### Current Issues
-- API endpoints for listing workflows and triggers returning 404 errors
 - Some API endpoints need to be updated to match Pipedream's current API structure
 
+### GraphQL API Integration
+The list-workflows command has been completely rewritten to use Pipedream's unofficial GraphQL API. This implementation:
+- Makes a proper GraphQL query to the Pipedream GraphQL endpoint
+- Retrieves workflows with detailed information (name, ID, active status, updated date)
+- Formats results in a user-friendly table format
+- Handles pagination for projects with many workflows
+- Provides better error handling and feedback
+
+The GraphQL implementation is more reliable than the previous REST API approach, which was returning 404 errors for some projects. This approach directly mimics the queries used by the Pipedream web UI, ensuring compatibility.
+
 ### Next Steps
-1. Fix API endpoints for list-workflows and list-triggers commands
-2. Implement deploy command for workflow updates via API
+1. Implement deploy command for workflow updates via API
+2. Improve GraphQL integration for list-triggers command
 3. Further improve error handling and recovery mechanisms
 4. Update documentation to reflect the simplified command set
 

@@ -76,6 +76,7 @@ program
   .description('List all workflows in a project')
   .option('-p, --project <id>', 'Project ID (optional if in project directory)')
   .option('-k, --apiKey <key>', 'Pipedream API key (optional if in .env)')
+  .option('-v, --verbose', 'Show verbose debug information')
   .action(listWorkflows);
 
 program
